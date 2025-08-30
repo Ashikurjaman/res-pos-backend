@@ -16,10 +16,30 @@ class ProductController extends Controller
      */
     public function index()
     {
-        // $products = Product::all(); // fetch all products
-        $products = Product::where('status', '=', 1)->orderBy('created_at', 'desc')->paginate(10);
-        return response()->json($products);
+        $products = DB::table('products')
+            ->join('category_models', 'products.category_id', '=', 'category_models.id')
+            ->join('unitls', 'products.unit', '=', 'unitls.id')
+            ->where('products.status', 1)
+            ->orderBy('products.created_at', 'desc')
+            ->select(
+                'products.*',
+                'category_models.id as category_model_id',
+                'category_models.category_name',
+                'unitls.id as unit_id',
+                'unitls.unit_name'
+            )
+            ->paginate(10);
+
+        $categories = DB::table('category_models')->select('id', 'category_name')->get();
+        $units      = DB::table('unitls')->select('id', 'unit_name')->get();
+
+        return response()->json([
+            'products'   => $products,
+            'categories' => $categories,
+            'units'      => $units,
+        ]);
     }
+
 
     /**
      * Show the form for creating a new resource.
@@ -51,7 +71,6 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        // dd($request->all());
 
         // Validate input
         $request->validate([
@@ -77,7 +96,7 @@ class ProductController extends Controller
 
             $product = Product::create([
                 'product_name' => $request->product_name,
-                'category_id' => $request->category_id,
+                'category_id'  => $request->category_id['value'],
                 'product_type' => $request->product_type,
                 'price' => $request->price,
                 'product_code' => $request->product_code,
@@ -85,12 +104,13 @@ class ProductController extends Controller
                 'vat' => $request->vat,
                 'sd' => $request->sd,
             ]);
+            // dd($product);
 
             DB::table('branch_stores')->insert([
                 'product_id'    => $product->id,
                 'product_name'  => $product->product_name,
-                'category_id'   => $request->category_id,
-                'category_name' => $request->category_name,
+                'category_id'   => $request->category_id['value'],   // ✅ ID
+                'category_name' => $request->category_id['label'],
                 'product_type'  => $product->product_type,
                 'price'         => $product->price,
                 'stock'         => 0,
@@ -127,7 +147,14 @@ class ProductController extends Controller
     {
         //
         $product = Product::findOrFail($id);
-        return response()->json($product);
+        $categories = DB::table('category_models')->select('id', 'category_name')->get();
+        $units      = DB::table('unitls')->select('id', 'unit_name')->get();
+
+        return response()->json([
+            'products'   => $product,
+            'categories' => $categories,
+            'units'      => $units,
+        ]);
     }
 
     /**
@@ -143,31 +170,66 @@ class ProductController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        // Validate input
-        $validated = $request->validate([
-            'product_name' => 'required|string|max:255',
-            'category'     => 'required',
+        $request->validate([
+            'product_name' => 'required|string',
+            'category_id' => 'required|integer',
             'product_type' => 'required',
-            'price'        => 'required|numeric',
+            'price' => 'required|numeric',
             'product_code' => 'required',
-            'unit'         => 'required',
-            'vat'          => 'nullable|numeric',
-            'sd'           => 'nullable|numeric',
+            'unit' => 'required',
+            'vat' => 'nullable|numeric',
+            'sd' => 'nullable|numeric',
         ]);
 
-        // Find product
-        $product = Product::find($id);
-        if (!$product) {
-            return response()->json(['message' => 'Product not found'], 404);
+        try {
+            DB::beginTransaction();
+
+            $product = Product::findOrFail($id);
+            $product->update([
+                'product_name' => $request->product_name,
+                'category_id'  => $request->category_id,
+                'product_type' => $request->product_type,
+                'price'        => $request->price,
+                'product_code' => $request->product_code,
+                'unit'         => $request->unit,
+                'vat'          => $request->vat,
+                'sd'           => $request->sd,
+            ]);
+
+            // Update branch_stores row
+            DB::table('branch_stores')
+                ->updateOrInsert(
+                    ['product_id' => $product->id],
+                    [
+                        'product_name'  => $product->product_name,
+                        'category_id'   => $product->category_id,
+                        'category_name' => DB::table('category_models')->where('id', $product->category_id)->value('category_name'),
+                        'product_type'  => $product->product_type,
+                        'price'         => $product->price,
+                        'stock'         => $request->stock,
+                        'product_code'  => $product->product_code,
+                        'unit'          => $product->unit,
+                        'vat'           => $product->vat,
+                        'sd'            => $product->sd,
+                        'status'        => 1,
+                        'updated_at'    => now(),
+                    ]
+                );
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Product updated successfully!',
+                'data' => $product,
+            ], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Something went wrong: ' . $e->getMessage(),
+            ], 500);
         }
-
-        // Update product
-        $product->update($validated);
-
-        return response()->json([
-            'message' => 'Product updated successfully',
-            'data' => $product
-        ]);
     }
 
     /**
