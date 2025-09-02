@@ -44,3 +44,8 @@ Route::get('/unit', [UnitController::class, 'index']);
 Route::get('/unit/{id}', [UnitController::class, 'show']);
 Route::put('/unit/{id}', [UnitController::class, 'update']);
 Route::delete('/unit/{id}', [UnitController::class, 'destroy']);
+
+
+// sale
+
+Route::get('/products-load', [ProductController::class, 'getProduct']);
