@@ -249,12 +249,11 @@ class ProductController extends Controller
         return response()->json(['message' => 'Product deleted successfully']);
     }
 
-    public function getProduct(Request $request){
+    public function getProduct(Request $request)
+    {
 
-            $products = DB::table('products')->select('*')->Where('category_id', '=', $request->category_id)->get();
+        $products = DB::table('branch_stores')->select('*')->Where('category_id', '=', $request->category_id)->get();
 
-            return response()->json($products);
-        }
-
-
+        return response()->json($products);
+    }
 }
