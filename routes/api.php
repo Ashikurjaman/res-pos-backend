@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\SaleController;
 use App\Http\Controllers\UnitController;
 use App\Models\Unitl;
 use Illuminate\Http\Request;
@@ -49,3 +50,4 @@ Route::delete('/unit/{id}', [UnitController::class, 'destroy']);
 // sale
 
 Route::get('/products-load', [ProductController::class, 'getProduct']);
+Route::post('/create-sale', [SaleController::class, 'store']);
