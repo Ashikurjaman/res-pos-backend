@@ -13,9 +13,35 @@ class SaleController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
+        // dd($request->all());
+        $formDate = $request->formDate;
+        $toDate = $request->toDate;
+        $invoiceNo = $request->invoiceNo;
+
+        $formDateFormat = $formDate ? date('Y-m-d', strtotime($formDate)) : null;
+        $toDateFormat = $toDate ? date('Y-m-d', strtotime($toDate)) : null;
+
+
+        $query = DB::table('sales')
+            ->select('entryDate', 'invoiceNo', 'discount', 'sd', 'vat', 'total', 'paymentMode');
+
+        if ($formDateFormat && $toDateFormat) {
+            $query->whereBetween('entryDate', [$formDateFormat, $toDateFormat]);
+        }
+
+        if (!empty($invoiceNo)) {
+            $query->where('invoiceNo', $invoiceNo);
+        }
+
+        $sales = $query->where('validity', 1)->orderBy('entryDate', 'desc')->get();
+        // dd($sales);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $sales,
+        ]);
     }
 
     /**
@@ -72,7 +98,7 @@ class SaleController extends Controller
             // dd($request->all());
             $invoiceNo = $this->generateInvoiceNo();
             $sale = Sale::create([
-                'entryDate'   => now()->toDateString(),
+                'entryDate'   => $request->entryDate,
                 'invoiceNo'   => $invoiceNo, // you can make your own auto generator
                 'discount'    => $data['discount'] ?? 0,
                 'sd'          => $data['sd'] ?? 0,
