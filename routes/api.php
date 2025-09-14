@@ -52,3 +52,6 @@ Route::delete('/unit/{id}', [UnitController::class, 'destroy']);
 Route::get('/products-load', [ProductController::class, 'getProduct']);
 Route::post('/create-sale', [SaleController::class, 'store']);
 Route::get('/sale-list', [SaleController::class, 'index']);
+Route::delete('/sale-list/{id}', [SaleController::class, 'destroy']);
+
+//http://localhost:8000/api/sale-list/{id}

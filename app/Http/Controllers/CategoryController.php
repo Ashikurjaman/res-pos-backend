@@ -13,8 +13,10 @@ class CategoryController extends Controller
     public function index()
     {
         //
-        $category = CategoryModel::where('status', '=', 1)->orderBy('created_at', 'desc')->paginate(10);
-        return response()->json($category);
+        $category = CategoryModel::where('status', '=', 1)->orderBy('created_at', 'asc')->get();
+        return response()->json([
+            'data' => $category
+        ]);
     }
 
     /**

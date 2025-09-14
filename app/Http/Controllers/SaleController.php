@@ -15,7 +15,6 @@ class SaleController extends Controller
      */
     public function index(Request $request)
     {
-        // dd($request->all());
         $formDate = $request->formDate;
         $toDate = $request->toDate;
         $invoiceNo = $request->invoiceNo;
@@ -23,20 +22,61 @@ class SaleController extends Controller
         $formDateFormat = $formDate ? date('Y-m-d', strtotime($formDate)) : null;
         $toDateFormat = $toDate ? date('Y-m-d', strtotime($toDate)) : null;
 
-
         $query = DB::table('sales')
-            ->select('entryDate', 'invoiceNo', 'discount', 'sd', 'vat', 'total', 'paymentMode');
+            ->leftJoin('saledetails', 'saledetails.sale_id', '=', 'sales.id')
+            ->select(
+                'sales.id as sale_id',
+                'sales.entryDate',
+                'sales.invoiceNo',
+                'sales.discount',
+                'sales.paymentMode',
+                'sales.validity',
+                'saledetails.product_name',
+                'saledetails.quantity',
+                'saledetails.price',
+                'saledetails.sd',
+                'saledetails.vat',
+                'saledetails.total'
+            );
 
         if ($formDateFormat && $toDateFormat) {
-            $query->whereBetween('entryDate', [$formDateFormat, $toDateFormat]);
+            $query->whereBetween('sales.entryDate', [$formDateFormat, $toDateFormat]);
         }
 
         if (!empty($invoiceNo)) {
-            $query->where('invoiceNo', $invoiceNo);
+            $query->where('sales.invoiceNo', $invoiceNo);
         }
 
-        $sales = $query->where('validity', 1)->orderBy('entryDate', 'desc')->get();
-        // dd($sales);
+        $rows = $query->where('sales.validity', 1)
+            ->orderBy('sales.entryDate', 'desc')
+            ->get();
+
+        // 🔑 Group rows by invoiceNo
+        $sales = $rows->groupBy('invoiceNo')->map(function ($items) {
+            $first = $items->first();
+            return [
+                'sale_id'     => $first->sale_id,
+                'invoiceNo'   => $first->invoiceNo,
+                'entryDate'   => $first->entryDate,
+                'discount'    => $first->discount,
+                'paymentMode' => $first->paymentMode,
+                'total_sd'    => $items->sum('sd'),
+                'total_vat'   => $items->sum('vat'),
+                'total'       => $items->sum('total'),
+                'products'    => $items->map(function ($item) {
+                    return [
+                        'product_name' => $item->product_name,
+                        'quantity'     => $item->quantity,
+                        'price'        => $item->price,
+                        'sd'           => $item->sd,
+                        'vat'          => $item->vat,
+                        'total'        => $item->total,
+                    ];
+                })->values(),
+                // 👇 optional: calculate invoice total
+                'total' => $items->sum('total'),
+            ];
+        })->values();
 
         return response()->json([
             'status' => 'success',
@@ -191,7 +231,26 @@ class SaleController extends Controller
      * Remove the specified resource from storage.
      */
     public function destroy(string $id)
+
     {
-        //
+        // dd($id);
+        $data = Sale::find($id);
+        if (!$data) {
+            return response()->json(['message' => 'Sale not found'], 404);
+        }
+
+        $data->validity = 0;
+        $data->save();
+
+        $dataDetails = Saledetails::where('sale_id', $id)->get();
+        if ($dataDetails->isEmpty()) {
+            return response()->json(['message' => 'Sale details not found'], 404);
+        }
+
+        foreach ($dataDetails as $detail) {
+            $detail->validity = 0;
+            $detail->save();
+        }
+        return response()->json(['message' => 'Sale deleted successfully']);
     }
 }
