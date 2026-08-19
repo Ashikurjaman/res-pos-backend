@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CategoryModel;
+use App\Models\Category; // ✅ Change from CategoryModel to Category
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class CategoryController extends Controller
 {
@@ -12,21 +13,23 @@ class CategoryController extends Controller
      */
     public function index()
     {
-        //
-        $category = CategoryModel::where('status', '=', 1)->orderBy('created_at', 'asc')->get();
-        return response()->json([
-            'data' => $category
-        ]);
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-
-
+        try {
+            $category = Category::where('status', 1)
+                ->orderBy('created_at', 'asc')
+                ->get();
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => $category
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Category index error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -34,26 +37,39 @@ class CategoryController extends Controller
      */
     public function store(Request $request)
     {
-        //
-        $request->validate([
-            'category_name' => 'required|string',
-            'status' => 'required|string',
-        ]);
-        if (CategoryModel::where('category_name', $request->category_name)->exists()) {
+        try {
+            $request->validate([
+                'category_name' => 'required|string|max:255|unique:category_models,category_name',
+                'status' => 'nullable|string',
+            ]);
+
+            // Check if category already exists
+            if (Category::where('category_name', $request->category_name)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Category name already exists!',
+                ], 409);
+            }
+
+            // Create category
+            $category = Category::create([
+                'category_name' => $request->category_name,
+                'status' => $request->status ?? '1',
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Category created successfully!',
+                'data' => $category,
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Category store error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Category name already exists!',
-            ], 409); // 409 Conflict
+                'message' => 'Failed to create category',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Create product
-        $category = CategoryModel::create($request->all());
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Category created successfully!',
-            'data' => $category,
-        ], 201);
     }
 
     /**
@@ -61,19 +77,28 @@ class CategoryController extends Controller
      */
     public function show(string $id)
     {
-        //
+        try {
+            $category = Category::find($id);
+            
+            if (!$category) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Category not found'
+                ], 404);
+            }
 
-        $category = CategoryModel::findOrFail($id);
-        return response()->json($category);
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
-    {
-        //
-
+            return response()->json([
+                'status' => 'success',
+                'data' => $category
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Category show error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch category',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -81,25 +106,37 @@ class CategoryController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
-        $validated = $request->validate([
-            'category_name' => 'required|string|max:255',
-            'status'     => 'required',
-        ]);
+        try {
+            $validated = $request->validate([
+                'category_name' => 'required|string|max:255|unique:category_models,category_name,' . $id,
+                'status' => 'required|string',
+            ]);
 
-        // Find product
-        $category = CategoryModel::find($id);
-        if (!$category) {
-            return response()->json(['message' => 'Category not found'], 404);
+            // Find category
+            $category = Category::find($id);
+            if (!$category) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Category not found'
+                ], 404);
+            }
+
+            // Update category
+            $category->update($validated);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Category updated successfully',
+                'data' => $category
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Category update error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update category',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Update product
-        $category->update($validated);
-
-        return response()->json([
-            'message' => 'Category updated successfully',
-            'data' => $category
-        ]);
     }
 
     /**
@@ -107,15 +144,31 @@ class CategoryController extends Controller
      */
     public function destroy(string $id)
     {
-        $category = CategoryModel::find($id);
+        try {
+            $category = Category::find($id);
 
-        if (!$category) {
-            return response()->json(['message' => 'Category not found'], 404);
+            if (!$category) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Category not found'
+                ], 404);
+            }
+
+            // Soft delete - set status to 0
+            $category->status = 0;
+            $category->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Category deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Category delete error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete category',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $category->status = 0;
-        $category->save();
-
-        return response()->json(['message' => 'Category deleted successfully']);
     }
 }

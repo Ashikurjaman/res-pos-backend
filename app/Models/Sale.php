@@ -17,12 +17,32 @@ class Sale extends Model
         'received',
         'change',
         'paymentMode',
+        'table_id',
         'user',
+        'status',
         'validity',
     ];
+
+    protected $attributes = [
+        'total' => 0,
+        'discount' => 0,
+        'sd' => 0,
+        'vat' => 0,
+        'received' => 0,
+        'change' => 0,
+        'status' => 'active',
+        'validity' => 1,
+    ];
+
     use HasFactory;
+
     public function details()
     {
-        return $this->hasMany(SaleDetails::class);
+        return $this->hasMany(Saledetails::class);
+    }
+
+    public function table()
+    {
+        return $this->belongsTo(Table::class);
     }
 }

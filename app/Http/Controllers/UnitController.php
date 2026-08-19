@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Unitl;
+use App\Models\Unit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class UnitController extends Controller
 {
@@ -12,17 +13,21 @@ class UnitController extends Controller
      */
     public function index()
     {
-        //
-        $unit = Unitl::where('status', '=', 1)->orderBy('created_at', 'desc')->paginate(10);
-        return response()->json($unit);
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
+        try {
+            $units = Unit::where('status', 1)->orderBy('created_at', 'asc')->get();
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => $units
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Unit index error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch units',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -30,26 +35,39 @@ class UnitController extends Controller
      */
     public function store(Request $request)
     {
-        //
-        $request->validate([
-            'unit_name' => 'required|string',
-            'status' => 'required',
-        ]);
-        if (Unitl::where('unit_name', $request->unit_name)->exists()) {
+        try {
+            $request->validate([
+                'unit_name' => 'required|string|max:255|unique:unitls,unit_name',
+                'status' => 'nullable|string',
+            ]);
+
+            // Check if unit already exists
+            if (Unit::where('unit_name', $request->unit_name)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unit name already exists!',
+                ], 409);
+            }
+
+            // Create unit
+            $unit = Unit::create([
+                'unit_name' => $request->unit_name,
+                'status' => $request->status ?? '1',
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Unit created successfully!',
+                'data' => $unit,
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Unit store error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unit name already exists!',
-            ], 409); // 409 Conflict
+                'message' => 'Failed to create unit',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Create product
-        $category = Unitl::create($request->all());
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Unit created successfully!',
-            'data' => $category,
-        ], 201);
     }
 
     /**
@@ -57,17 +75,28 @@ class UnitController extends Controller
      */
     public function show(string $id)
     {
-        //
-        $unit = Unitl::findOrFail($id);
-        return response()->json($unit);
-    }
+        try {
+            $unit = Unit::find($id);
+            
+            if (!$unit) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unit not found'
+                ], 404);
+            }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
-    {
-        //
+            return response()->json([
+                'status' => 'success',
+                'data' => $unit
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Unit show error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch unit',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -75,25 +104,35 @@ class UnitController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
-        $validated = $request->validate([
-            'unit_name' => 'required|string|max:255',
-            'status'     => 'required',
-        ]);
+        try {
+            $validated = $request->validate([
+                'unit_name' => 'required|string|max:255|unique:unitls,unit_name,' . $id,
+                'status' => 'required|string',
+            ]);
 
-        // Find product
-        $unit = Unitl::find($id);
-        if (!$unit) {
-            return response()->json(['message' => 'Unit not found'], 404);
+            $unit = Unit::find($id);
+            if (!$unit) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unit not found'
+                ], 404);
+            }
+
+            $unit->update($validated);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Unit updated successfully',
+                'data' => $unit
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Unit update error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update unit',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Update product
-        $unit->update($validated);
-
-        return response()->json([
-            'message' => 'Unit updated successfully',
-            'data' => $unit
-        ]);
     }
 
     /**
@@ -101,16 +140,30 @@ class UnitController extends Controller
      */
     public function destroy(string $id)
     {
-        //
-        $unit = Unitl::find($id);
+        try {
+            $unit = Unit::find($id);
 
-        if (!$unit) {
-            return response()->json(['message' => 'Unit not found'], 404);
+            if (!$unit) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unit not found'
+                ], 404);
+            }
+
+            $unit->status = 0;
+            $unit->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Unit deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Unit delete error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete unit',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $unit->status = 0;
-        $unit->save();
-
-        return response()->json(['message' => 'Unit deleted successfully']);
     }
 }

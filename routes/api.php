@@ -3,8 +3,8 @@
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\TableController;
 use App\Http\Controllers\UnitController;
-use App\Models\Unitl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -23,35 +23,96 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-
-//Product
-Route::post('/products', [ProductController::class, 'store']);
-Route::get('/products/next-code', [ProductController::class, 'create']);
-Route::get('/products', [ProductController::class, 'index']);
-Route::get('/products/{id}', [ProductController::class, 'show']);
-Route::put('/products/{id}', [ProductController::class, 'update']);
-Route::delete('/products/{id}', [ProductController::class, 'destroy']);
-
-//Category
-Route::post('/category', [CategoryController::class, 'store']);
-Route::get('/category', [CategoryController::class, 'index']);
-Route::get('/category/{id}', [CategoryController::class, 'show']);
-Route::put('/category/{id}', [CategoryController::class, 'update']);
-Route::delete('/category/{id}', [CategoryController::class, 'destroy']);
-
-//Unit
-Route::post('/unit', [UnitController::class, 'store']);
-Route::get('/unit', [UnitController::class, 'index']);
-Route::get('/unit/{id}', [UnitController::class, 'show']);
-Route::put('/unit/{id}', [UnitController::class, 'update']);
-Route::delete('/unit/{id}', [UnitController::class, 'destroy']);
-
-
-// sale
-
+// ==================== PRODUCT ROUTES ====================
+Route::prefix('products')->group(function () {
+    Route::get('/next-code', [ProductController::class, 'create']);
+    Route::post('/', [ProductController::class, 'store']);
+    Route::get('/', [ProductController::class, 'index']);
+    Route::get('/with-stock', [ProductController::class, 'getProductsWithStock']);
+    Route::get('/{id}', [ProductController::class, 'show']);
+    Route::put('/{id}', [ProductController::class, 'update']);
+    Route::delete('/{id}', [ProductController::class, 'destroy']);
+    Route::get('/{id}/stock', [ProductController::class, 'getStock']);
+    Route::put('/{id}/stock', [ProductController::class, 'updateStock']);
+});
 Route::get('/products-load', [ProductController::class, 'getProduct']);
-Route::post('/create-sale', [SaleController::class, 'store']);
-Route::get('/sale-list', [SaleController::class, 'index']);
-Route::delete('/sale-list/{id}', [SaleController::class, 'destroy']);
 
-//http://localhost:8000/api/sale-list/{id}
+// ==================== CATEGORY ROUTES ====================
+Route::prefix('category')->group(function () {
+    Route::post('/', [CategoryController::class, 'store']);
+    Route::get('/', [CategoryController::class, 'index']);
+    Route::get('/{id}', [CategoryController::class, 'show']);
+    Route::put('/{id}', [CategoryController::class, 'update']);
+    Route::delete('/{id}', [CategoryController::class, 'destroy']);
+});
+
+// ==================== UNIT ROUTES ====================
+Route::prefix('unit')->group(function () {
+    Route::post('/', [UnitController::class, 'store']);
+    Route::get('/', [UnitController::class, 'index']);
+    Route::get('/{id}', [UnitController::class, 'show']);
+    Route::put('/{id}', [UnitController::class, 'update']);
+    Route::delete('/{id}', [UnitController::class, 'destroy']);
+});
+
+// ==================== TABLE ROUTES ====================
+Route::prefix('tables')->group(function () {
+    Route::get('/', [TableController::class, 'index']);
+    Route::get('/all', [TableController::class, 'getAll']);
+    Route::post('/', [TableController::class, 'store']);
+    Route::get('/{id}', [TableController::class, 'show']);
+    Route::put('/{id}', [TableController::class, 'update']);
+    Route::put('/{id}/status', [TableController::class, 'updateStatus']);
+    Route::delete('/{id}', [TableController::class, 'destroy']);
+    Route::delete('/{id}/force', [TableController::class, 'forceDelete']);
+    Route::get('/all', [TableController::class, 'getAll']);
+    Route::get('/statistics', [TableController::class, 'statistics']);
+    Route::put('/bulk/status', [TableController::class, 'bulkUpdateStatus']);
+});
+
+// ==================== SALE ROUTES ====================
+Route::prefix('sales')->group(function () {
+    Route::post('/initialize', [SaleController::class, 'initialize']);
+    Route::put('/{id}', [SaleController::class, 'autoSave']);
+    Route::get('/', [SaleController::class, 'index']);
+    Route::get('/{id}', [SaleController::class, 'show']);
+    Route::put('/{id}/update', [SaleController::class, 'update']);
+    Route::put('/{id}/status', [SaleController::class, 'updateStatus']);
+    Route::delete('/{id}', [SaleController::class, 'destroy']);
+    Route::get('/table/{tableId}/active', [SaleController::class, 'getActiveSaleByTable']);
+    Route::get('/summary/today', [SaleController::class, 'todaySummary']);
+});
+
+// ==================== SALE LIST ROUTES ====================
+Route::prefix('sale-list')->group(function () {
+    Route::get('/', [SaleController::class, 'index']);
+    Route::delete('/{id}', [SaleController::class, 'destroy']);
+});
+
+// ==================== CREATE SALE ====================
+Route::post('/create-sale', [SaleController::class, 'store']);
+
+// ==================== TEST ROUTE ====================
+Route::get('/test-tables', function () {
+    try {
+        $tables = \App\Models\Table::all();
+        return response()->json([
+            'status' => 'success',
+            'data' => $tables
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+
+
+});
+
+Route::get('/test-cors', function () {
+    return response()->json([
+        'message' => 'CORS is working!',
+        'status' => 'success'
+    ]);
+});

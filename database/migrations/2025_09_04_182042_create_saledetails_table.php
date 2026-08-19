@@ -6,38 +6,27 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
         Schema::create('saledetails', function (Blueprint $table) {
             $table->id();
-
-            $table->unsignedBigInteger('sale_id'); // FK -> sales.id
-            $table->string('invoiceNo', 100)->nullable();
-
-            $table->unsignedBigInteger('product_id'); // FK -> products.id
-            $table->string('product_name', 100);
-
-            $table->decimal('quantity', 15, 3);
-            $table->decimal('sd', 15, 3)->default(0);
-            $table->decimal('vat', 15, 3)->default(0);
-            $table->decimal('price', 15, 3);
-            $table->decimal('total', 15, 3);
-
-            $table->unsignedBigInteger('category_id'); // FK -> categories.id
-            $table->unsignedBigInteger('user')->nullable(); // FK -> users.id
-            $table->boolean('validity')->default(true);
-
+            $table->foreignId('sale_id')->constrained('sales')->onDelete('cascade');
+            $table->string('invoiceNo')->nullable();
+            $table->integer('product_id');
+            $table->string('product_name');
+            $table->decimal('quantity', 10, 2);
+            $table->decimal('price', 10, 2);
+            $table->decimal('sd', 10, 2)->default(0);
+            $table->decimal('vat', 10, 2)->default(0);
+            $table->decimal('total', 10, 2);
+            $table->integer('category_id')->nullable();
+            $table->integer('user')->nullable();
+            $table->boolean('validity')->default(1);
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
+    public function down()
     {
         Schema::dropIfExists('saledetails');
     }
