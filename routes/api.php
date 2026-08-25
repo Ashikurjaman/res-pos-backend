@@ -115,4 +115,28 @@ Route::get('/test-cors', function () {
         'message' => 'CORS is working!',
         'status' => 'success'
     ]);
+
+
+
+});
+
+   // ==================== AUTH ROUTES ====================
+Route::prefix('auth')->group(function () {
+    Route::post('/signup', [AuthController::class, 'signup']);
+    Route::post('/signin', [AuthController::class, 'signin']);
+    Route::post('/signout', [AuthController::class, 'signout'])->middleware('auth:sanctum');
+    Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('auth:sanctum');
+});
+
+// ==================== USER MANAGEMENT ROUTES ====================
+Route::prefix('users')->middleware('auth:sanctum')->group(function () {
+    Route::get('/', [AuthController::class, 'index']);                    // Get all users
+    Route::post('/', [AuthController::class, 'store']);                   // Create user
+    Route::get('/{id}', [AuthController::class, 'show']);                 // Get single user
+    Route::put('/{id}', [AuthController::class, 'update']);               // Update user
+    Route::delete('/{id}', [AuthController::class, 'destroy']);           // Delete user
+    Route::put('/{id}/status', [AuthController::class, 'updateStatus']);  // Update status
+    Route::put('/{id}/role', [AuthController::class, 'updateRole']);      // Update role
+    Route::post('/bulk-delete', [AuthController::class, 'bulkDelete']);   // Bulk delete
 });

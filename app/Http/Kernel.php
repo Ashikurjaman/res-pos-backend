@@ -6,9 +6,10 @@ use Illuminate\Foundation\Http\Kernel as HttpKernel;
 
 class Kernel extends HttpKernel
 {
-        protected $middleware = [
+    // app/Http/Kernel.php
+    protected $middleware = [
         \App\Http\Middleware\TrustProxies::class,
-        \Illuminate\Http\Middleware\HandleCors::class, // ✅ Keep this
+        \Illuminate\Http\Middleware\HandleCors::class,
         \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
@@ -26,17 +27,13 @@ class Kernel extends HttpKernel
         ],
 
         'api' => [
-            \Illuminate\Http\Middleware\HandleCors::class, // ✅ Add HandleCors here too
+            // Use your custom CorsMiddleware instead of HandleCors
+            \App\Http\Middleware\CorsMiddleware::class, // ✅ Add your custom middleware
             \Illuminate\Routing\Middleware\ThrottleRequests::class . ':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
     ];
 
-    /**
-     * The application's middleware aliases.
-     *
-     * @var array<string, class-string|string>
-     */
     protected $middlewareAliases = [
         'auth' => \App\Http\Middleware\Authenticate::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
@@ -49,5 +46,7 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        // Register your CorsMiddleware as an alias
+        'cors' => \App\Http\Middleware\CorsMiddleware::class,
     ];
 }

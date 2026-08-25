@@ -32,6 +32,19 @@ class Sale extends Model
         'change' => 0,
         'status' => 'active',
         'validity' => 1,
+        'paymentMode' => 'Cash', // ✅ Add default payment mode
+    ];
+
+    protected $casts = [
+        'validity' => 'boolean',
+        'entryDate' => 'date',
+        'total' => 'decimal:2',
+        'discount' => 'decimal:2',
+        'sd' => 'decimal:2',
+        'vat' => 'decimal:2',
+        'received' => 'decimal:2',
+        'change' => 'decimal:2',
+        'table_id' => 'integer',
     ];
 
     use HasFactory;
@@ -44,5 +57,23 @@ class Sale extends Model
     public function table()
     {
         return $this->belongsTo(Table::class);
+    }
+
+    // ✅ Add scope for completed sales
+    public function scopeCompleted($query)
+    {
+        return $query->where('status', 'completed')->where('validity', 1);
+    }
+
+    // ✅ Add scope for active sales
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active')->where('validity', 1);
+    }
+
+    // ✅ Add scope for valid sales
+    public function scopeValid($query)
+    {
+        return $query->where('validity', 1);
     }
 }

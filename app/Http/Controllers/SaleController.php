@@ -253,7 +253,7 @@ class SaleController extends Controller
         DB::beginTransaction();
         try {
             $invoiceNo = $this->generateInvoiceNo();
-            
+
             $sale = Sale::create([
                 'entryDate'   => $request->entryDate ?? now()->format('Y-m-d'),
                 'invoiceNo'   => $invoiceNo,
@@ -338,7 +338,7 @@ class SaleController extends Controller
     {
         try {
             $sale = Sale::with(['details', 'table'])->find($id);
-            
+
             if (!$sale) {
                 return response()->json([
                     'status' => 'error',
@@ -381,7 +381,7 @@ class SaleController extends Controller
                 'total' => 'nullable|numeric',
                 'received' => 'nullable|numeric',
                 'change' => 'nullable|numeric',
-                'paymentMode' => 'nullable|string',
+                'paymentMode' => 'nullable|string|in:Cash,Card,Mobile', // ✅ Added validation
                 'status' => 'nullable|in:active,printed,completed',
             ]);
 
@@ -533,7 +533,7 @@ class SaleController extends Controller
     {
         try {
             $today = now()->format('Y-m-d');
-            
+
             $summary = Sale::where('entryDate', $today)
                 ->where('validity', 1)
                 ->where('status', 'completed')
