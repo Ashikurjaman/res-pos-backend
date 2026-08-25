@@ -1,0 +1,66 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: res-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - mysql
+    networks:
+      - res-network
+
+  frontend:
+    build:
+      context: ../res-frontend
+      dockerfile: Dockerfile
+    container_name: res-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../res-frontend:/app
+      - /app/node_modules
+    networks:
+      - res-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: res-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: res_db
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: res_user
+      MYSQL_PASSWORD: res_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - res_mysql_data:/var/lib/mysql
+    networks:
+      - res-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: res-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - "8081:80"
+    depends_on:
+      - mysql
+    networks:
+      - res-network
+
+networks:
+  res-network:
+
+volumes:
+  res_mysql_data:
