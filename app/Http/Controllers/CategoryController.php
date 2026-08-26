@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Category; // ✅ Change from CategoryModel to Category
+use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class CategoryController extends Controller
 {
@@ -14,14 +15,16 @@ class CategoryController extends Controller
     public function index()
     {
         try {
-            $category = Category::where('status', 1)
+            // ✅ Fix: Use integer status (1 = active, 0 = inactive)
+            $categories = Category::where('status', 1)
                 ->orderBy('created_at', 'asc')
                 ->get();
-            
+
             return response()->json([
                 'status' => 'success',
-                'data' => $category
-            ]);
+                'data' => $categories,
+                'message' => 'Categories fetched successfully'
+            ], 200);
         } catch (\Exception $e) {
             Log::error('Category index error: ' . $e->getMessage());
             return response()->json([
@@ -38,9 +41,10 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         try {
-            $request->validate([
+            $validated = $request->validate([
                 'category_name' => 'required|string|max:255|unique:category_models,category_name',
-                'status' => 'nullable|string',
+                'status' => 'nullable|integer|in:0,1',
+                'validity' => 'nullable|integer|in:0,1',
             ]);
 
             // Check if category already exists
@@ -51,10 +55,10 @@ class CategoryController extends Controller
                 ], 409);
             }
 
-            // Create category
             $category = Category::create([
-                'category_name' => $request->category_name,
-                'status' => $request->status ?? '1',
+                'category_name' => $validated['category_name'],
+                'status' => $validated['status'] ?? 1,
+                'validity' => $validated['validity'] ?? 1,
             ]);
 
             return response()->json([
@@ -62,6 +66,12 @@ class CategoryController extends Controller
                 'message' => 'Category created successfully!',
                 'data' => $category,
             ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Category store error: ' . $e->getMessage());
             return response()->json([
@@ -79,7 +89,7 @@ class CategoryController extends Controller
     {
         try {
             $category = Category::find($id);
-            
+
             if (!$category) {
                 return response()->json([
                     'status' => 'error',
@@ -89,8 +99,9 @@ class CategoryController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $category
-            ]);
+                'data' => $category,
+                'message' => 'Category fetched successfully'
+            ], 200);
         } catch (\Exception $e) {
             Log::error('Category show error: ' . $e->getMessage());
             return response()->json([
@@ -107,13 +118,8 @@ class CategoryController extends Controller
     public function update(Request $request, string $id)
     {
         try {
-            $validated = $request->validate([
-                'category_name' => 'required|string|max:255|unique:category_models,category_name,' . $id,
-                'status' => 'required|string',
-            ]);
-
-            // Find category
             $category = Category::find($id);
+
             if (!$category) {
                 return response()->json([
                     'status' => 'error',
@@ -121,14 +127,25 @@ class CategoryController extends Controller
                 ], 404);
             }
 
-            // Update category
+            $validated = $request->validate([
+                'category_name' => 'sometimes|string|max:255|unique:category_models,category_name,' . $id,
+                'status' => 'nullable|integer|in:0,1',
+                'validity' => 'nullable|integer|in:0,1',
+            ]);
+
             $category->update($validated);
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Category updated successfully',
                 'data' => $category
-            ]);
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Category update error: ' . $e->getMessage());
             return response()->json([
@@ -140,7 +157,7 @@ class CategoryController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Remove the specified resource from storage (Soft Delete).
      */
     public function destroy(string $id)
     {
@@ -154,19 +171,100 @@ class CategoryController extends Controller
                 ], 404);
             }
 
-            // Soft delete - set status to 0
+            // ✅ Soft delete - set status to 0 (inactive)
             $category->status = 0;
             $category->save();
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Category deleted successfully'
-            ]);
+            ], 200);
         } catch (\Exception $e) {
             Log::error('Category delete error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete category',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all categories (including inactive).
+     */
+    public function getAll()
+    {
+        try {
+            $categories = Category::orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $categories,
+                'message' => 'All categories fetched successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Category getAll error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get categories with active status only.
+     */
+    public function getActive()
+    {
+        try {
+            $categories = Category::where('status', 1)
+                ->orderBy('category_name', 'asc')
+                ->get();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $categories,
+                'message' => 'Active categories fetched successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Category getActive error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch active categories',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Restore a soft-deleted category.
+     */
+    public function restore(string $id)
+    {
+        try {
+            $category = Category::find($id);
+
+            if (!$category) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Category not found'
+                ], 404);
+            }
+
+            $category->status = 1;
+            $category->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Category restored successfully',
+                'data' => $category
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Category restore error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to restore category',
                 'error' => $e->getMessage()
             ], 500);
         }
