@@ -1,6 +1,4 @@
-// app/Http/Controllers/AuthController.php
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Models\User;
@@ -12,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     // ==================== AUTHENTICATION ====================
-    
+
     public function signup(Request $request)
     {
         try {
@@ -66,8 +64,8 @@ class AuthController extends Controller
                 'password' => 'required|string',
             ]);
 
-            $field = filter_var($validated['usernameOrEmail'], FILTER_VALIDATE_EMAIL) 
-                ? 'email' 
+            $field = filter_var($validated['usernameOrEmail'], FILTER_VALIDATE_EMAIL)
+                ? 'email'
                 : 'username';
 
             if (!Auth::attempt([$field => $validated['usernameOrEmail'], 'password' => $validated['password']])) {
@@ -304,7 +302,7 @@ class AuthController extends Controller
     {
         try {
             $user = User::findOrFail($id);
-            
+
             // Prevent deleting self
             if (auth()->id() === $user->id) {
                 return response()->json([

@@ -1,15 +1,13 @@
 <?php
-
 namespace App\Http;
 
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
 
 class Kernel extends HttpKernel
 {
-    // app/Http/Kernel.php
     protected $middleware = [
         \App\Http\Middleware\TrustProxies::class,
-        \Illuminate\Http\Middleware\HandleCors::class,
+        \Illuminate\Http\Middleware\HandleCors::class, // ✅ Keep this
         \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
@@ -27,8 +25,8 @@ class Kernel extends HttpKernel
         ],
 
         'api' => [
-            // Use your custom CorsMiddleware instead of HandleCors
-            \App\Http\Middleware\CorsMiddleware::class, // ✅ Add your custom middleware
+            // ❌ Remove any custom CORS middleware from here
+            // \App\Http\Middleware\CorsMiddleware::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class . ':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
@@ -46,7 +44,5 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-        // Register your CorsMiddleware as an alias
-        'cors' => \App\Http\Middleware\CorsMiddleware::class,
     ];
 }
