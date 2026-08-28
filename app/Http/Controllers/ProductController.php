@@ -2,119 +2,203 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Category;
 use App\Models\Product;
+use App\Models\Category;
 use App\Models\Unit;
+use App\Models\Supplier;
 use App\Models\BranchStore;
+use App\Models\HeadOfficeStore;
+use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
     /**
-     * Get next product code with categories and units.
+     * Get product creation data (categories, units, suppliers, food_types).
      */
-    public function create()
-    {
-        try {
-            // Get next product code
-            $lastProduct = Product::orderBy('id', 'desc')->first();
-            $lastCode = $lastProduct ? intval(substr($lastProduct->product_code, -5)) : 0;
-            $nextCode = str_pad($lastCode + 1, 5, '0', STR_PAD_LEFT);
+     public function create()
+         {
+             try {
+                 // Get next product code
+                 $lastProduct = Product::orderBy('id', 'desc')->first();
+                 $lastCode = $lastProduct ? intval(substr($lastProduct->product_code, -5)) : 0;
+                 $nextCode = str_pad($lastCode + 1, 5, '0', STR_PAD_LEFT);
 
-            // Get all categories from category_models table
-            $categories = Category::where('status', 1)->get();
-            
-            // Get all units from unitls table
-            $units = Unit::where('status', 1)->get();
+                 // Get categories
+                 $categories = Category::where('status', 1)->get();
 
-            return response()->json([
-                'next_code' => $nextCode,
-                'categories' => $categories,
-                'units' => $units
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Product create error: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to load product data',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+                 // Get units
+                 $units = Unit::where('status', 1)->get();
 
-    /**
-     * Store a newly created product.
-     */
-    public function store(Request $request)
-    {
-        try {
-            $validated = $request->validate([
-                'product_name' => 'required|string|max:255',
-                'category_id' => 'required|exists:category_models,id',
-                'product_type' => 'required|string',
-                'price' => 'required|numeric|min:0',
-                'product_code' => 'nullable|string|unique:products,product_code',
-                'unit' => 'required|exists:unitls,id',
-                'vat' => 'nullable|numeric|min:0|max:100',
-                'sd' => 'nullable|numeric|min:0|max:100',
-            ]);
+                 // Get suppliers
+                 $suppliers = Supplier::where('validity', 1)->get();
 
-            // Create product
-            $product = Product::create($validated);
+                 // Food types
+                 $foodTypes = [
+                     ['id' => 1, 'name' => 'Vegetarian'],
+                     ['id' => 2, 'name' => 'Non-Vegetarian'],
+                     ['id' => 3, 'name' => 'Vegan'],
+                     ['id' => 4, 'name' => 'Gluten Free'],
+                 ];
 
-            // Get category name
-            $category = Category::find($validated['category_id']);
-            
-            // Create branch store entry with all product details
-            BranchStore::create([
-                'product_id' => $product->id,
-                'product_name' => $product->product_name,
-                'category_id' => $product->category_id,
-                'category_name' => $category ? $category->category_name : '',
-                'product_type' => (int) $product->product_type,
-                'price' => (int) $product->price,
-                'prv_stock' => 0,
-                'stock' => 0,
-                'after_stock' => 0,
-                'product_code' => (int) $product->product_code,
-                'unit' => (int) $product->unit,
-                'vat' => (int) ($product->vat ?? 0),
-                'sd' => (int) ($product->sd ?? 0),
-                'status' => 1,
-            ]);
+                 return response()->json([
+                     'status' => 'success',
+                     'data' => [
+                         'next_code' => $nextCode,
+                         'categories' => $categories,
+                         'units' => $units,
+                         'suppliers' => $suppliers,
+                         'food_types' => $foodTypes,
+                     ]
+                 ]);
+             } catch (\Exception $e) {
+                 Log::error('Product create error: ' . $e->getMessage());
+                 return response()->json([
+                     'status' => 'error',
+                     'message' => 'Failed to load product data',
+                     'error' => $e->getMessage()
+                 ], 500);
+             }
+         }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Product created successfully',
-                'data' => $product,
-                'product_code' => $product->product_code
-            ], 201);
-        } catch (\Exception $e) {
-            Log::error('Product store error: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to create product',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+         /**
+          * Store a newly created product.
+          */
+         public function store(Request $request)
+         {
+             try {
+                 // Validation
+                 $validated = $request->validate([
+                     'category_id' => 'required|exists:categories,id',
+                     'product_name' => 'required|string|max:255',
+                     'product_code' => 'required|string|max:115|unique:product,product_code',
+                     'cost_price' => 'nullable|numeric|min:0',
+                     'pur_price' => 'nullable|numeric|min:0',
+                     'sale_price' => 'nullable|numeric|min:0',
+                     'expire' => 'nullable|string|max:20',
+                     'unit_id' => 'required|exists:units,id',
+                     'dis_status' => 'nullable|integer',
+                     'vat_rate' => 'nullable|integer|min:0|max:100',
+                     'sd_rate' => 'nullable|integer|min:0|max:100',
+                     'scharge' => 'nullable|numeric|min:0',
+                     'product_type' => 'nullable|integer|in:1,2,3',
+                     'opening_balance' => 'nullable|numeric|min:0',
+                     'supplier_id' => 'nullable|array',
+                     'supplier_id.*' => 'exists:suppliers,id',
+                     'food_type' => 'nullable|integer',
+                     'outlet_id' => 'nullable|exists:outlets,id',
+                 ]);
 
+                 // Handle product image upload
+                 $productImage = null;
+                 if ($request->hasFile('product_image')) {
+                     $image = $request->file('product_image');
+                     $filename = time() . '_' . $image->getClientOriginalName();
+                     $path = $image->storeAs('products', $filename, 'public');
+                     $productImage = 'storage/' . $path;
+                 }
+
+                 // Create product
+                 $product = Product::create([
+                     'entrydate' => now()->format('Y-m-d'),
+                     'category_id' => $validated['category_id'],
+                     'product_name' => $validated['product_name'],
+                     'product_code' => $validated['product_code'],
+                     'cost_price' => $validated['cost_price'] ?? 0,
+                     'pur_price' => $validated['pur_price'] ?? 0,
+                     'last_price' => $validated['pur_price'] ?? 0,
+                     'previous_price' => null,
+                     'avg_price' => $validated['pur_price'] ?? 0,
+                     'sale_price' => $validated['sale_price'] ?? 0,
+                     'expire' => $validated['expire'] ?? null,
+                     'unit_id' => $validated['unit_id'],
+                     'dis_status' => $validated['dis_status'] ?? null,
+                     'vat_rate' => $validated['vat_rate'] ?? 0,
+                     'sd_rate' => $validated['sd_rate'] ?? 0,
+                     'scharge' => $validated['scharge'] ?? 0,
+                     'product_type' => $validated['product_type'] ?? 1,
+                     'product_image' => $productImage,
+                     'opening_balance' => $validated['opening_balance'] ?? 0,
+                     'supplier_id' => $validated['supplier_id'] ? implode(',', $validated['supplier_id']) : null,
+                     'food_type' => $validated['food_type'] ?? null,
+                     'status' => 1,
+                     'user_id' => auth()->id(),
+                     'validity' => 1,
+                 ]);
+
+                 // Store image path in legacy field
+                 if ($productImage) {
+                     $product->imagepath = $productImage;
+                     $product->save();
+                 }
+
+                 // Handle opening balance in head office store
+                 if (($validated['opening_balance'] ?? 0) > 0) {
+                     HeadOfficeStore::create([
+                         'product_id' => $product->id,
+                         'entrydate' => now()->format('Y-m-d'),
+                         'balanceinhand' => $validated['opening_balance'],
+                         'stockbalancebefore' => 0,
+                         'stockbalanceafter' => $validated['opening_balance'],
+                         'opening_balance' => $validated['opening_balance'],
+                         'status' => 1,
+                         'validity' => 1,
+                     ]);
+                 }
+
+                 // Handle branch store
+                 $outletId = $validated['outlet_id'] ?? 1;
+                 BranchStore::create([
+                     'product_id' => $product->id,
+                     'entrydate' => now()->format('Y-m-d'),
+                     'balanceinhand' => $validated['opening_balance'] ?? 0,
+                     'stockbalancebefore' => 0,
+                     'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                     'sale_price' => $validated['sale_price'] ?? 0,
+                     'vat_rate' => $validated['vat_rate'] ?? 0,
+                     'sd_rate' => $validated['sd_rate'] ?? 0,
+                     'scharge' => $validated['scharge'] ?? 0,
+                     'outlet_id' => $outletId,
+                     'opening_balance' => $validated['opening_balance'] ?? 0,
+                     'food_type' => $validated['food_type'] ?? null,
+                     'status' => 1,
+                     'validity' => 1,
+                 ]);
+
+                 return response()->json([
+                     'status' => 'success',
+                     'message' => 'Product created successfully!',
+                     'data' => $product,
+                 ], 201);
+             } catch (ValidationException $e) {
+                 return response()->json([
+                     'status' => 'error',
+                     'message' => 'Validation failed',
+                     'errors' => $e->errors(),
+                 ], 422);
+             } catch (\Exception $e) {
+                 Log::error('Product store error: ' . $e->getMessage());
+                 return response()->json([
+                     'status' => 'error',
+                     'message' => 'Failed to create product',
+                     'error' => $e->getMessage()
+                 ], 500);
+             }
+         }
     /**
      * Display a listing of products.
      */
     public function index()
     {
         try {
-            $products = Product::with(['category', 'unit'])->get();
-            
-            $categories = Category::where('status', 1)->get();
-            $units = Unit::where('status', 1)->get();
+            $products = Product::with(['category', 'unit', 'suppliers'])->active()->get();
 
             return response()->json([
-                'products' => $products,
-                'categories' => $categories,
-                'units' => $units
+                'status' => 'success',
+                'data' => $products
             ]);
         } catch (\Exception $e) {
             Log::error('Product index error: ' . $e->getMessage());
@@ -132,8 +216,8 @@ class ProductController extends Controller
     public function show($id)
     {
         try {
-            $product = Product::with(['category', 'unit'])->find($id);
-            
+            $product = Product::with(['category', 'unit', 'suppliers', 'branchStores', 'headOfficeStore'])->find($id);
+
             if (!$product) {
                 return response()->json([
                     'status' => 'error',
@@ -141,13 +225,9 @@ class ProductController extends Controller
                 ], 404);
             }
 
-            $categories = Category::where('status', 1)->get();
-            $units = Unit::where('status', 1)->get();
-
             return response()->json([
-                'products' => $product,
-                'categories' => $categories,
-                'units' => $units
+                'status' => 'success',
+                'data' => $product
             ]);
         } catch (\Exception $e) {
             Log::error('Product show error: ' . $e->getMessage());
@@ -166,7 +246,7 @@ class ProductController extends Controller
     {
         try {
             $product = Product::find($id);
-            
+
             if (!$product) {
                 return response()->json([
                     'status' => 'error',
@@ -175,41 +255,61 @@ class ProductController extends Controller
             }
 
             $validated = $request->validate([
-                'product_name' => 'required|string|max:255',
-                'category_id' => 'required|exists:category_models,id',
-                'product_type' => 'required|string',
-                'price' => 'required|numeric|min:0',
-                'unit' => 'required|exists:unitls,id',
-                'vat' => 'nullable|numeric|min:0|max:100',
-                'sd' => 'nullable|numeric|min:0|max:100',
+                'category_id' => 'sometimes|exists:categories,id',
+                'product_name' => 'sometimes|string|max:255',
+                'product_code' => 'sometimes|string|max:115|unique:product,product_code,' . $id,
+                'cost_price' => 'nullable|numeric|min:0',
+                'pur_price' => 'nullable|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'expire' => 'nullable|string|max:20',
+                'unit_id' => 'sometimes|exists:units,id',
+                'dis_status' => 'nullable|integer',
+                'vat_rate' => 'nullable|integer|min:0|max:100',
+                'sd_rate' => 'nullable|integer|min:0|max:100',
+                'scharge' => 'nullable|numeric|min:0',
+                'product_type' => 'nullable|integer|in:1,2,3',
+                'product_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'opening_balance' => 'nullable|numeric|min:0',
+                'supplier_id' => 'nullable|array',
+                'supplier_id.*' => 'exists:suppliersetup,id',
+                'food_type' => 'nullable|integer',
+                'status' => 'nullable|integer|in:0,1',
+                'validity' => 'nullable|integer|in:0,1',
             ]);
 
-            // Update product
+            // Handle product image upload
+            if ($request->hasFile('product_image')) {
+                // Delete old image
+                if ($product->product_image) {
+                    $oldPath = str_replace('storage/', '', $product->product_image);
+                    Storage::disk('public')->delete($oldPath);
+                }
+
+                $image = $request->file('product_image');
+                $filename = time() . '_' . $image->getClientOriginalName();
+                $path = $image->storeAs('products', $filename, 'public');
+                $validated['product_image'] = 'storage/' . $path;
+                $validated['imagepath'] = 'storage/' . $path;
+            }
+
             $product->update($validated);
 
-            // Update branch store
-            $category = Category::find($validated['category_id']);
-            $branchStore = BranchStore::where('product_id', $product->id)->first();
-            
-            if ($branchStore) {
-                $branchStore->update([
-                    'product_name' => $product->product_name,
-                    'category_id' => $product->category_id,
-                    'category_name' => $category ? $category->category_name : '',
-                    'product_type' => (int) $product->product_type,
-                    'price' => (int) $product->price,
-                    'product_code' => (int) $product->product_code,
-                    'unit' => (int) $product->unit,
-                    'vat' => (int) ($product->vat ?? 0),
-                    'sd' => (int) ($product->sd ?? 0),
-                ]);
+            // Update suppliers
+            if (isset($validated['supplier_id'])) {
+                $product->suppliers()->sync($validated['supplier_id']);
             }
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Product updated successfully',
-                'data' => $product
+                'message' => 'Product updated successfully!',
+                'data' => $product,
             ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Product update error: ' . $e->getMessage());
             return response()->json([
@@ -227,7 +327,7 @@ class ProductController extends Controller
     {
         try {
             $product = Product::find($id);
-            
+
             if (!$product) {
                 return response()->json([
                     'status' => 'error',
@@ -235,8 +335,16 @@ class ProductController extends Controller
                 ], 404);
             }
 
-            // Delete branch store entry
-            BranchStore::where('product_id', $product->id)->delete();
+            // Delete product image
+            if ($product->product_image) {
+                $oldPath = str_replace('storage/', '', $product->product_image);
+                Storage::disk('public')->delete($oldPath);
+            }
+
+            // Delete related records
+            $product->branchStores()->delete();
+            $product->headOfficeStore()->delete();
+            $product->suppliers()->detach();
 
             $product->delete();
 
@@ -255,170 +363,46 @@ class ProductController extends Controller
     }
 
     /**
- * Get products for a specific category (for sale page).
- */
-public function getProduct(Request $request)
-{
-    try {
-        $categoryId = $request->category_id;
-        
-        // Get products by category
-        $products = Product::where('category_id', $categoryId)->get();
-        
-        // ✅ Add stock information from branch store
-        $productsWithStock = $products->map(function ($product) {
-            // Get branch store stock
-            $branchStore = BranchStore::where('product_id', $product->id)->first();
-            
-            return [
-                'id' => $product->id,
-                'product_name' => $product->product_name,
-                'price' => (float) $product->price,
-                'stock' => $branchStore ? (int) $branchStore->stock : 0,
-                'vat' => (float) ($product->vat ?? 0),
-                'sd' => (float) ($product->sd ?? 0),
-                'category' => $product->category_id,
-            ];
-        });
-        
-        return response()->json($productsWithStock);
-    } catch (\Exception $e) {
-        Log::error('Get product error: ' . $e->getMessage());
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Failed to fetch products',
-            'error' => $e->getMessage()
-        ], 500);
-    }
-}
-
-    /**
-     * Get product stock from branch store.
+     * Get products by category.
      */
-    public function getStock($id)
+    public function getProductsByCategory(Request $request)
     {
         try {
-            $branchStore = BranchStore::where('product_id', $id)->first();
-            
-            if (!$branchStore) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Product not found in branch store'
-                ], 404);
-            }
+            $categoryId = $request->category_id;
+            $outletId = $request->outlet_id ?? 1;
 
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'product_id' => $branchStore->product_id,
-                    'product_name' => $branchStore->product_name,
-                    'stock' => $branchStore->stock,
-                    'prv_stock' => $branchStore->prv_stock,
-                    'after_stock' => $branchStore->after_stock,
-                ]
-            ]);
+            $products = Product::where('category_id', $categoryId)
+                ->where('status', 1)
+                ->where('validity', 1)
+                ->get();
+
+            $productsWithStock = $products->map(function ($product) use ($outletId) {
+                $branchStore = BranchStore::where('product_id', $product->id)
+                    ->where('outlet_id', $outletId)
+                    ->first();
+
+                return [
+                    'id' => $product->id,
+                    'product_name' => $product->product_name,
+                    'product_code' => $product->product_code,
+                    'price' => $product->sale_price ?? $product->pur_price ?? 0,
+                    'stock' => $branchStore ? $branchStore->balanceinhand : 0,
+                    'vat_rate' => $product->vat_rate ?? 0,
+                    'sd_rate' => $product->sd_rate ?? 0,
+                    'category' => $product->category_id,
+                    'unit_id' => $product->unit_id,
+                    'product_image' => $product->product_image,
+                ];
+            });
+
+            return response()->json($productsWithStock);
         } catch (\Exception $e) {
-            Log::error('Get stock error: ' . $e->getMessage());
+            Log::error('Get products by category error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to fetch stock',
+                'message' => 'Failed to fetch products',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-
-    /**
-     * Update product stock in branch store.
-     */
-    public function updateStock(Request $request, $id)
-    {
-        try {
-            $validated = $request->validate([
-                'stock' => 'required|numeric|min:0',
-            ]);
-
-            $branchStore = BranchStore::where('product_id', $id)->first();
-            
-            if (!$branchStore) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Product not found in branch store'
-                ], 404);
-            }
-
-            $branchStore->prv_stock = $branchStore->stock;
-            $branchStore->stock = $validated['stock'];
-            $branchStore->after_stock = $validated['stock'];
-            $branchStore->save();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Stock updated successfully',
-                'data' => $branchStore
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Update stock error: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to update stock',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get all products with their stock from branch store.
-     */
-    /**
- * Get all products with their stock from branch store.
- */
-/**
- * Get all products with their stock from branch store.
- */
-public function getProductsWithStock()
-{
-    try {
-        // Get all products
-        $products = Product::all();
-        
-        $productsWithStock = [];
-        
-        foreach ($products as $product) {
-            // Get category
-            $category = Category::find($product->category_id);
-            
-            // Get unit
-            $unit = Unit::find($product->unit);
-            
-            // Get branch store
-            $branchStore = BranchStore::where('product_id', $product->id)->first();
-            
-            $productsWithStock[] = [
-                'id' => $product->id,
-                'product_name' => $product->product_name ?? '',
-                'product_code' => $product->product_code ?? '',
-                'price' => (float) ($product->price ?? 0),
-                'category_name' => $category ? $category->category_name : '',
-                'unit_name' => $unit ? $unit->unit_name : '',
-                'stock' => (int) ($branchStore ? $branchStore->stock : 0),
-                'prv_stock' => (int) ($branchStore ? $branchStore->prv_stock : 0),
-                'after_stock' => (int) ($branchStore ? $branchStore->after_stock : 0),
-                'vat' => (float) ($product->vat ?? 0),
-                'sd' => (float) ($product->sd ?? 0),
-            ];
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $productsWithStock
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Get products with stock error: ' . $e->getMessage());
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Failed to fetch products with stock',
-            'error' => $e->getMessage()
-        ], 500);
-    }
-}
 }

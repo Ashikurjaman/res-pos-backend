@@ -5,11 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class BranchStore extends Model
+class HeadOfficeStore extends Model
 {
     use HasFactory;
 
-    protected $table = 'branch_store';
+    protected $table = 'head_office_store';
 
     protected $fillable = [
         'product_id',
@@ -17,16 +17,8 @@ class BranchStore extends Model
         'balanceinhand',
         'stockbalancebefore',
         'stockbalanceafter',
-        'sale_price',
         'status',
-        'extra_status',
-        'dis_status',
-        'vat_rate',
-        'sd_rate',
-        'scharge',
-        'outlet_id',
         'opening_balance',
-        'food_type',
         'validity',
     ];
 
@@ -35,7 +27,6 @@ class BranchStore extends Model
         'balanceinhand' => 'decimal:3',
         'stockbalancebefore' => 'decimal:3',
         'stockbalanceafter' => 'decimal:3',
-        'sale_price' => 'decimal:3',
         'opening_balance' => 'decimal:3',
         'status' => 'integer',
         'validity' => 'integer',
@@ -44,10 +35,5 @@ class BranchStore extends Model
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_id');
-    }
-
-    public function outlet()
-    {
-        return $this->belongsTo(Outlet::class, 'outlet_id');
     }
 }

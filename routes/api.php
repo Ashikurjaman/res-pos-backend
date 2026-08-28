@@ -6,6 +6,7 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\UnitController;
 use Illuminate\Http\Request;
@@ -57,12 +58,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/bulk-delete', [AuthController::class, 'bulkDelete']);
     });
 
+
+    // Supplier Routes
+    Route::prefix('suppliers')->middleware('auth:sanctum')->group(function () {
+        Route::get('/', [SupplierController::class, 'index']);
+        Route::get('/all', [SupplierController::class, 'getAll']);
+        Route::post('/', [SupplierController::class, 'store']);
+        Route::get('/{id}', [SupplierController::class, 'show']);
+        Route::put('/{id}', [SupplierController::class, 'update']);
+        Route::delete('/{id}', [SupplierController::class, 'destroy']);
+        Route::post('/{id}/restore', [SupplierController::class, 'restore']);
+        Route::get('/{id}/ledger', [SupplierController::class, 'getLedger']);
+    });
+
     // ---- Products ----
     Route::prefix('products')->group(function () {
+        // ✅ This route should be GET, not POST
         Route::get('/next-code', [ProductController::class, 'create']);
+        Route::get('/create-data', [ProductController::class, 'create']);
         Route::post('/', [ProductController::class, 'store']);
         Route::get('/', [ProductController::class, 'index']);
         Route::get('/with-stock', [ProductController::class, 'getProductsWithStock']);
+        Route::get('/by-category', [ProductController::class, 'getProductsByCategory']);
         Route::get('/{id}', [ProductController::class, 'show']);
         Route::put('/{id}', [ProductController::class, 'update']);
         Route::delete('/{id}', [ProductController::class, 'destroy']);
@@ -86,11 +103,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ---- Unit ----
     Route::prefix('unit')->group(function () {
-        Route::post('/', [UnitController::class, 'store']);
-        Route::get('/', [UnitController::class, 'index']);
-        Route::get('/{id}', [UnitController::class, 'show']);
-        Route::put('/{id}', [UnitController::class, 'update']);
-        Route::delete('/{id}', [UnitController::class, 'destroy']);
+        Route::get('/', [UnitController::class, 'index']);           // Get active units (status = 1)
+        Route::get('/all', [UnitController::class, 'getAll']);       // Get all units
+        Route::get('/active', [UnitController::class, 'getActive']); // Get active units
+        Route::post('/', [UnitController::class, 'store']);          // Create unit
+        Route::get('/{id}', [UnitController::class, 'show']);        // Get single unit
+        Route::put('/{id}', [UnitController::class, 'update']);      // Update unit
+        Route::delete('/{id}', [UnitController::class, 'destroy']);  // Delete unit
+        Route::post('/{id}/restore', [UnitController::class, 'restore']); // Restore unit
     });
 
     // ---- Tables ----
