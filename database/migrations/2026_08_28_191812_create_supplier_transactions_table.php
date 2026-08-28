@@ -20,8 +20,8 @@ return new class extends Migration
             $table->decimal('balance', 15, 3)->default(0);
             $table->text('note')->nullable();
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->timestamps();
             $table->tinyInteger('validity')->default(1);
+            $table->timestamps();
 
             $table->index(['supplier_id', 'transaction_date']);
         });

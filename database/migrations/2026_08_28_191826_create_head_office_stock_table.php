@@ -19,8 +19,8 @@ return new class extends Migration
             $table->decimal('previous_balance', 15, 3)->default(0);
             $table->decimal('current_balance', 15, 3)->default(0);
             $table->tinyInteger('status')->default(1);
-            $table->timestamps();
             $table->tinyInteger('validity')->default(1);
+            $table->timestamps();
 
             $table->index(['product_id', 'supplier_id']);
         });

@@ -13,9 +13,10 @@ return new class extends Migration
             $table->foreignId('supplier_id')->constrained('suppliersetup')->onDelete('cascade');
             $table->foreignId('product_id')->constrained('product')->onDelete('cascade');
             $table->decimal('purchase_price', 15, 3)->default(0);
-            $table->timestamps();
             $table->tinyInteger('validity')->default(1);
+            $table->timestamps();
 
+            // Unique constraint to prevent duplicate entries
             $table->unique(['supplier_id', 'product_id']);
         });
     }

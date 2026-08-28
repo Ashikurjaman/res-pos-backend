@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\FoodTypeController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\SaleController;
@@ -167,6 +168,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [OutletController::class, 'update']);         // Update outlet
         Route::delete('/{id}', [OutletController::class, 'destroy']);     // Delete outlet
         Route::post('/{id}/restore', [OutletController::class, 'restore']); // Restore outlet
+    });
+
+    Route::prefix('food-types')->group(function () {
+        Route::get('/', [FoodTypeController::class, 'index']);
+        Route::get('/active', [FoodTypeController::class, 'getActive']);
+        Route::post('/', [FoodTypeController::class, 'store']);
+        Route::get('/{id}', [FoodTypeController::class, 'show']);
+        Route::put('/{id}', [FoodTypeController::class, 'update']);
+        Route::delete('/{id}', [FoodTypeController::class, 'destroy']);
+        Route::post('/{id}/restore', [FoodTypeController::class, 'restore']);
+        Route::post('/{id}/toggle', [FoodTypeController::class, 'toggleOnline']);
     });
 });
 
