@@ -41,6 +41,8 @@ class SupplierController extends Controller
         try {
             $suppliers = Supplier::orderBy('supplier_name', 'asc')->get();
 
+            // dd($suppliers);
+
             return response()->json([
                 'status' => 'success',
                 'data' => $suppliers

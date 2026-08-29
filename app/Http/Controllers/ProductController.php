@@ -87,7 +87,6 @@ class ProductController extends Controller
                 'scharge' => 'nullable|numeric|min:0',
                 'product_type' => 'required|integer|in:1,2,3',
                 'expire' => 'nullable|string|max:20',
-                'outlet_id' => 'nullable|exists:outlets,id',
                 'dis_status' => 'nullable|integer|in:0,1',
             ];
 
@@ -166,7 +165,7 @@ class ProductController extends Controller
                     }
                 }
 
-                // Handle opening balance in head office store
+                // ✅ Handle opening balance in head office store
                 if (($validated['opening_balance'] ?? 0) > 0) {
                     HeadOfficeStore::create([
                         'product_id' => $product->id,
@@ -180,31 +179,59 @@ class ProductController extends Controller
                     ]);
                 }
 
-                // Handle branch store
-                $outletId = $validated['outlet_id'] ?? 1;
-                BranchStore::create([
-                    'product_id' => $product->id,
-                    'entrydate' => now()->format('Y-m-d'),
-                    'balanceinhand' => $validated['opening_balance'] ?? 0,
-                    'stockbalancebefore' => 0,
-                    'stockbalanceafter' => $validated['opening_balance'] ?? 0,
-                    'sale_price' => $validated['sale_price'] ?? 0,
-                    'vat_rate' => $validated['vat_rate'] ?? 0,
-                    'sd_rate' => $validated['sd_rate'] ?? 0,
-                    'scharge' => $validated['scharge'] ?? 0,
-                    'outlet_id' => $outletId,
-                    'opening_balance' => $validated['opening_balance'] ?? 0,
-                    'food_type' => $validated['food_type_id'] ?? null,
-                    'status' => 1,
-                    'validity' => 1,
-                ]);
+                // ✅ Get all active outlets
+                $outlets = Outlet::where('status', 1)->where('validity', 1)->get();
+
+                // ✅ If no outlets found, create for default outlet
+                if ($outlets->isEmpty()) {
+                    $defaultOutlet = Outlet::find(1);
+                    if ($defaultOutlet) {
+                        $outlets = collect([$defaultOutlet]);
+                    } else {
+                        $defaultOutlet = Outlet::create([
+                            'outlet_code' => 'DEF001',
+                            'outlet_name' => 'Default Outlet',
+                            'address' => 'Default Address',
+                            'contact_no' => '0000000000',
+                            'outlet_mgr' => 'Default Manager',
+                            'ho_mobile_no' => '0000000000',
+                            'validity' => 1,
+                            'status' => 1,
+                        ]);
+                        $outlets = collect([$defaultOutlet]);
+                    }
+                }
+
+                // ✅ Create branch store entry for each outlet
+                foreach ($outlets as $outlet) {
+                    BranchStore::create([
+                        'product_id' => $product->id,
+                        'entrydate' => now()->format('Y-m-d'),
+                        'balanceinhand' => $validated['opening_balance'] ?? 0,
+                        'stockbalancebefore' => 0,
+                        'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                        'sale_price' => $validated['sale_price'] ?? 0,
+                        'vat_rate' => $validated['vat_rate'] ?? 0,
+                        'sd_rate' => $validated['sd_rate'] ?? 0,
+                        'scharge' => $validated['scharge'] ?? 0,
+                        'outlet_id' => $outlet->id,
+                        'opening_balance' => $validated['opening_balance'] ?? 0,
+                        'food_type' => $validated['food_type_id'] ?? null,
+                        'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : null,
+                        'purchase_price' => $validated['pur_price'] ?? 0,
+                        'total_amount' => ($validated['pur_price'] ?? 0) * ($validated['opening_balance'] ?? 0),
+                        'status' => 1,
+                        'validity' => 1,
+                    ]);
+                }
 
                 DB::commit();
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Product created successfully!',
+                    'message' => 'Product created successfully for all outlets!',
                     'data' => $product,
+                    'outlets_count' => $outlets->count(),
                 ], 201);
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -312,6 +339,7 @@ class ProductController extends Controller
                 'status' => 'nullable|integer|in:0,1',
                 'validity' => 'nullable|integer|in:0,1',
                 'expire' => 'nullable|string|max:20',
+                'dis_status' => 'nullable|integer|in:0,1',
             ];
 
             // Conditional validation for supplier_id
@@ -342,9 +370,18 @@ class ProductController extends Controller
             DB::beginTransaction();
 
             try {
+                // ✅ Update product
                 $product->update($validated);
 
-                // Update suppliers
+                // ✅ Prepare supplier_id
+                $supplierId = null;
+                if (!empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
+                    $supplierId = implode(',', $validated['supplier_id']);
+                    $product->supplier_id = $supplierId;
+                    $product->save();
+                }
+
+                // ✅ Update suppliers mapping
                 if (isset($validated['supplier_id'])) {
                     // Delete existing supplier relations
                     SupplierProduct::where('product_id', $product->id)->delete();
@@ -359,11 +396,56 @@ class ProductController extends Controller
                     }
                 }
 
+                // ✅ Get all active outlets
+                $outlets = Outlet::where('status', 1)->where('validity', 1)->get();
+
+                // ✅ Update branch store for each outlet
+                foreach ($outlets as $outlet) {
+                    $branchStore = BranchStore::where('product_id', $product->id)
+                        ->where('outlet_id', $outlet->id)
+                        ->first();
+
+                    if ($branchStore) {
+                        // ✅ Update existing branch store
+                        $branchStore->update([
+                            'sale_price' => $validated['sale_price'] ?? $branchStore->sale_price,
+                            'vat_rate' => $validated['vat_rate'] ?? $branchStore->vat_rate,
+                            'sd_rate' => $validated['sd_rate'] ?? $branchStore->sd_rate,
+                            'scharge' => $validated['scharge'] ?? $branchStore->scharge,
+                            'food_type' => $validated['food_type_id'] ?? $branchStore->food_type,
+                            'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : $branchStore->supplier_id,
+                            'purchase_price' => $validated['pur_price'] ?? $branchStore->purchase_price,
+                            'total_amount' => ($validated['pur_price'] ?? $branchStore->purchase_price) * ($branchStore->balanceinhand ?? 0),
+                        ]);
+                    } else {
+                        // ✅ Create new branch store if not exists
+                        BranchStore::create([
+                            'product_id' => $product->id,
+                            'entrydate' => now()->format('Y-m-d'),
+                            'balanceinhand' => $validated['opening_balance'] ?? 0,
+                            'stockbalancebefore' => 0,
+                            'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                            'sale_price' => $validated['sale_price'] ?? 0,
+                            'vat_rate' => $validated['vat_rate'] ?? 0,
+                            'sd_rate' => $validated['sd_rate'] ?? 0,
+                            'scharge' => $validated['scharge'] ?? 0,
+                            'outlet_id' => $outlet->id,
+                            'opening_balance' => $validated['opening_balance'] ?? 0,
+                            'food_type' => $validated['food_type_id'] ?? null,
+                            'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : null,
+                            'purchase_price' => $validated['pur_price'] ?? 0,
+                            'total_amount' => ($validated['pur_price'] ?? 0) * ($validated['opening_balance'] ?? 0),
+                            'status' => 1,
+                            'validity' => 1,
+                        ]);
+                    }
+                }
+
                 DB::commit();
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Product updated successfully!',
+                    'message' => 'Product updated successfully for all outlets!',
                     'data' => $product,
                 ]);
             } catch (\Exception $e) {
@@ -409,6 +491,7 @@ class ProductController extends Controller
             DB::beginTransaction();
 
             try {
+                // ✅ Delete branch stores for all outlets
                 $product->branchStores()->delete();
                 $product->headOfficeStore()->delete();
                 $product->headOfficeStocks()->delete();
@@ -419,7 +502,7 @@ class ProductController extends Controller
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Product deleted successfully'
+                    'message' => 'Product deleted successfully from all outlets'
                 ]);
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -562,6 +645,50 @@ class ProductController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Get products with stock error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get products for a specific outlet.
+     */
+    public function getProductsByOutlet($outletId)
+    {
+        try {
+            $products = Product::with(['category', 'unit', 'foodType'])
+                ->active()
+                ->get()
+                ->map(function ($product) use ($outletId) {
+                    $branchStore = BranchStore::where('product_id', $product->id)
+                        ->where('outlet_id', $outletId)
+                        ->first();
+
+                    return [
+                        'id' => $product->id,
+                        'product_name' => $product->product_name,
+                        'product_code' => $product->product_code,
+                        'price' => $product->sale_price ?? $product->pur_price ?? 0,
+                        'stock' => $branchStore ? $branchStore->balanceinhand : 0,
+                        'vat_rate' => $product->vat_rate ?? 0,
+                        'sd_rate' => $product->sd_rate ?? 0,
+                        'category_name' => $product->category ? $product->category->category_name : null,
+                        'unit_name' => $product->unit ? $product->unit->unit_name : null,
+                        'food_type_name' => $product->foodType ? $product->foodType->type_name : null,
+                        'product_image' => $product->product_image,
+                    ];
+                });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $products,
+                'outlet_id' => $outletId
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get products by outlet error: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
