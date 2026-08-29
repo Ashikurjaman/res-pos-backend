@@ -42,7 +42,6 @@ class ProductController extends Controller
 
             // Get food types from database
             $foodTypes = FoodType::where('validity', 1)
-                ->where('onlinestatus', 1)
                 ->get();
 
             return response()->json([
