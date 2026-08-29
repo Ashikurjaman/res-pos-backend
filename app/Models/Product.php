@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,22 +23,18 @@ class Product extends Model
         'sale_price',
         'expire',
         'unit_id',
-        'mfExStatus',
-        'extra_status',
-        'prdbelowrange',
-        'imagepath',
-        'user_id',
+        'food_type_id',
         'dis_status',
         'vat_rate',
         'sd_rate',
         'scharge',
         'product_type',
         'product_image',
+        'imagepath',
         'opening_balance',
         'supplier_id',
-        'food_type',
-        'food_type_id', // ✅ Added for relationship
         'status',
+        'user_id',
         'validity',
     ];
 
@@ -57,41 +52,10 @@ class Product extends Model
         'sd_rate' => 'integer',
         'scharge' => 'decimal:3',
         'product_type' => 'integer',
-        'food_type' => 'integer',
         'food_type_id' => 'integer',
         'status' => 'integer',
         'validity' => 'integer',
     ];
-
-    // Constants
-    const PRODUCT_TYPE_SALE = 1;
-    const PRODUCT_TYPE_RAW = 2;
-    const PRODUCT_TYPE_SUB_RECIPE = 3;
-
-    const STATUS_ACTIVE = 1;
-    const STATUS_INACTIVE = 0;
-
-    // Scopes
-    public function scopeActive($query)
-    {
-        return $query->where('status', self::STATUS_ACTIVE)
-                     ->where('validity', 1);
-    }
-
-    public function scopeInactive($query)
-    {
-        return $query->where('status', self::STATUS_INACTIVE);
-    }
-
-    public function scopeByCategory($query, $categoryId)
-    {
-        return $query->where('category_id', $categoryId);
-    }
-
-    public function scopeByFoodType($query, $foodTypeId)
-    {
-        return $query->where('food_type_id', $foodTypeId);
-    }
 
     // Relationships
     public function category()
@@ -104,18 +68,16 @@ class Product extends Model
         return $this->belongsTo(Unit::class, 'unit_id');
     }
 
-    public function user()
-    {
-        return $this->belongsTo(User::class, 'user_id');
-    }
-
-    // ✅ Food Type Relationship
     public function foodType()
     {
         return $this->belongsTo(FoodType::class, 'food_type_id');
     }
 
-    // Supplier Relationship (Many-to-Many)
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     public function suppliers()
     {
         return $this->belongsToMany(Supplier::class, 'supplier_product', 'product_id', 'supplier_id')
@@ -123,74 +85,51 @@ class Product extends Model
                     ->withTimestamps();
     }
 
-    // Branch Store Relationship
     public function branchStores()
     {
         return $this->hasMany(BranchStore::class, 'product_id');
     }
 
-    public function branchStoreForOutlet($outletId)
-    {
-        return $this->hasOne(BranchStore::class, 'product_id')
-                    ->where('outlet_id', $outletId);
-    }
-
-    // Head Office Store Relationship
     public function headOfficeStore()
     {
         return $this->hasOne(HeadOfficeStore::class, 'product_id');
     }
 
-    // Head Office Stock Relationship
     public function headOfficeStocks()
     {
         return $this->hasMany(HeadOfficeStock::class, 'product_id');
     }
 
-    // Sale Details Relationship
-    public function saleDetails()
+    // Scopes
+    public function scopeActive($query)
     {
-        return $this->hasMany(SaleDetail::class, 'product_id');
+        return $query->where('status', 1)->where('validity', 1);
+    }
+
+    public function scopeRawMaterial($query)
+    {
+        return $query->where('product_type', 2);
+    }
+
+    public function scopeSaleProduct($query)
+    {
+        return $query->where('product_type', 1);
     }
 
     // Accessors
-    public function getStatusLabelAttribute()
-    {
-        return $this->status == self::STATUS_ACTIVE ? 'Active' : 'Inactive';
-    }
-
     public function getProductTypeLabelAttribute()
     {
         $types = [
-            self::PRODUCT_TYPE_SALE => 'Sale Product',
-            self::PRODUCT_TYPE_RAW => 'Raw Materials',
-            self::PRODUCT_TYPE_SUB_RECIPE => 'Sub Recipe',
+            1 => 'Sale Product',
+            2 => 'Raw Material',
+            3 => 'Sub Recipe',
         ];
         return $types[$this->product_type] ?? 'Unknown';
     }
 
-    public function getFullNameAttribute()
+    public function getStatusLabelAttribute()
     {
-        return $this->product_name . ' (' . $this->product_code . ')';
-    }
-
-    public function getProfitAttribute()
-    {
-        return ($this->sale_price ?? 0) - ($this->pur_price ?? 0);
-    }
-
-    public function getProfitMarginAttribute()
-    {
-        if ($this->pur_price > 0) {
-            return (($this->sale_price - $this->pur_price) / $this->pur_price) * 100;
-        }
-        return 0;
-    }
-
-    // Check if product is in stock
-    public function getTotalStockAttribute()
-    {
-        return $this->branchStores()->sum('balanceinhand') ?? 0;
+        return $this->status == 1 ? 'Active' : 'Inactive';
     }
 
     // Boot method
@@ -200,7 +139,7 @@ class Product extends Model
 
         static::creating(function ($product) {
             if (is_null($product->status)) {
-                $product->status = self::STATUS_ACTIVE;
+                $product->status = 1;
             }
             if (is_null($product->validity)) {
                 $product->validity = 1;
@@ -208,31 +147,15 @@ class Product extends Model
             if (is_null($product->entrydate)) {
                 $product->entrydate = now()->format('Y-m-d');
             }
-            if (is_null($product->avg_price)) {
-                $product->avg_price = $product->pur_price ?? 0;
-            }
             if (is_null($product->user_id)) {
                 $product->user_id = auth()->id();
             }
-            if (is_null($product->food_type)) {
-                $product->food_type = 0;
+            if (is_null($product->avg_price)) {
+                $product->avg_price = $product->pur_price ?? 0;
             }
-        });
-
-        static::updating(function ($product) {
-            // Track price changes
-            if ($product->isDirty('pur_price')) {
-                $product->previous_price = $product->getOriginal('pur_price');
-                $product->avg_price = $product->pur_price;
-                $product->last_price = $product->pur_price;
+            if ($product->product_type == 2 && is_null($product->last_price)) {
+                $product->last_price = $product->pur_price ?? 0;
             }
-        });
-
-        static::deleting(function ($product) {
-            // Delete related records
-            $product->branchStores()->delete();
-            $product->headOfficeStocks()->delete();
-            $product->suppliers()->detach();
         });
     }
 }

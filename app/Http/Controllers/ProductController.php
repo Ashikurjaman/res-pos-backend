@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -39,7 +40,7 @@ class ProductController extends Controller
             // Get suppliers
             $suppliers = Supplier::where('validity', 1)->get();
 
-            // ✅ Get food types from database
+            // Get food types from database
             $foodTypes = FoodType::where('validity', 1)
                 ->where('onlinestatus', 1)
                 ->get();
@@ -70,12 +71,13 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         try {
-            $validated = $request->validate([
+            // ✅ Basic validation rules
+            $rules = [
                 'product_name' => 'required|string|max:255',
                 'product_code' => 'required|string|max:115|unique:product,product_code',
-                'category_id' => 'required|exists:categories,id',
-                'unit_id' => 'required|exists:units,id',
-                'food_type_id' => 'nullable|exists:food_types,id', // ✅ Added
+                'category_id' => 'required|exists:category_models,id',
+                'unit_id' => 'required|exists:unitls,id',
+                'food_type_id' => 'nullable|exists:food_types,id',
                 'cost_price' => 'nullable|numeric|min:0',
                 'pur_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
@@ -83,89 +85,131 @@ class ProductController extends Controller
                 'vat_rate' => 'nullable|integer|min:0|max:100',
                 'sd_rate' => 'nullable|integer|min:0|max:100',
                 'scharge' => 'nullable|numeric|min:0',
-                'product_type' => 'nullable|integer|in:1,2,3',
+                'product_type' => 'required|integer|in:1,2,3',
                 'expire' => 'nullable|string|max:20',
-                'supplier_id' => 'nullable|array',
-                'supplier_id.*' => 'exists:suppliers,id',
                 'outlet_id' => 'nullable|exists:outlets,id',
-            ]);
+                'dis_status' => 'nullable|integer|in:0,1',
+            ];
 
-            // Handle product image upload
-            $productImage = null;
-            if ($request->hasFile('product_image')) {
-                $image = $request->file('product_image');
-                $filename = time() . '_' . $image->getClientOriginalName();
-                $path = $image->storeAs('products', $filename, 'public');
-                $productImage = 'storage/' . $path;
+            // ✅ Conditional validation: supplier_id required for raw materials (product_type = 2)
+            if ($request->product_type == 2) {
+                $rules['supplier_id'] = 'required|array|min:1';
+                $rules['supplier_id.*'] = 'exists:suppliersetup,id';
+            } else {
+                $rules['supplier_id'] = 'nullable|array';
+                $rules['supplier_id.*'] = 'exists:suppliersetup,id';
             }
 
-            // Create product
-            $product = Product::create([
-                'entrydate' => now()->format('Y-m-d'),
-                'category_id' => $validated['category_id'],
-                'product_name' => $validated['product_name'],
-                'product_code' => $validated['product_code'],
-                'cost_price' => $validated['cost_price'] ?? 0,
-                'pur_price' => $validated['pur_price'] ?? 0,
-                'last_price' => $validated['pur_price'] ?? 0,
-                'previous_price' => null,
-                'avg_price' => $validated['pur_price'] ?? 0,
-                'sale_price' => $validated['sale_price'] ?? 0,
-                'expire' => $validated['expire'] ?? null,
-                'unit_id' => $validated['unit_id'],
-                'food_type_id' => $validated['food_type_id'] ?? null, // ✅ Added
-                'dis_status' => $validated['dis_status'] ?? null,
-                'vat_rate' => $validated['vat_rate'] ?? 0,
-                'sd_rate' => $validated['sd_rate'] ?? 0,
-                'scharge' => $validated['scharge'] ?? 0,
-                'product_type' => $validated['product_type'] ?? 1,
-                'product_image' => $productImage,
-                'imagepath' => $productImage,
-                'opening_balance' => $validated['opening_balance'] ?? 0,
-                'supplier_id' => $validated['supplier_id'] ? implode(',', $validated['supplier_id']) : null,
-                'status' => 1,
-                'user_id' => auth()->id(),
-                'validity' => 1,
-            ]);
+            $validated = $request->validate($rules);
 
-            // Handle opening balance in head office store
-            if (($validated['opening_balance'] ?? 0) > 0) {
-                HeadOfficeStore::create([
+            DB::beginTransaction();
+
+            try {
+                // Handle product image upload
+                $productImage = null;
+                if ($request->hasFile('product_image')) {
+                    $image = $request->file('product_image');
+                    $filename = time() . '_' . $image->getClientOriginalName();
+                    $path = $image->storeAs('products', $filename, 'public');
+                    $productImage = 'storage/' . $path;
+                }
+
+                // Prepare supplier_id
+                $supplierId = null;
+                if (!empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
+                    $supplierId = implode(',', $validated['supplier_id']);
+                }
+
+                // Create product
+                $product = Product::create([
+                    'entrydate' => now()->format('Y-m-d'),
+                    'category_id' => $validated['category_id'],
+                    'product_name' => $validated['product_name'],
+                    'product_code' => $validated['product_code'],
+                    'cost_price' => $validated['cost_price'] ?? 0,
+                    'pur_price' => $validated['pur_price'] ?? 0,
+                    'last_price' => $validated['pur_price'] ?? 0,
+                    'previous_price' => null,
+                    'avg_price' => $validated['pur_price'] ?? 0,
+                    'sale_price' => $validated['sale_price'] ?? 0,
+                    'expire' => $validated['expire'] ?? null,
+                    'unit_id' => $validated['unit_id'],
+                    'food_type_id' => $validated['food_type_id'] ?? null,
+                    'dis_status' => $validated['dis_status'] ?? null,
+                    'vat_rate' => $validated['vat_rate'] ?? 0,
+                    'sd_rate' => $validated['sd_rate'] ?? 0,
+                    'scharge' => $validated['scharge'] ?? 0,
+                    'product_type' => $validated['product_type'],
+                    'product_image' => $productImage,
+                    'imagepath' => $productImage,
+                    'opening_balance' => $validated['opening_balance'] ?? 0,
+                    'supplier_id' => $supplierId,
+                    'status' => 1,
+                    'user_id' => auth()->id(),
+                    'validity' => 1,
+                ]);
+
+                // Store image path in legacy field
+                if ($productImage) {
+                    $product->imagepath = $productImage;
+                    $product->save();
+                }
+
+                // ✅ If raw material, create supplier product mapping
+                if ($validated['product_type'] == 2 && !empty($validated['supplier_id'])) {
+                    foreach ($validated['supplier_id'] as $supplierId) {
+                        SupplierProduct::create([
+                            'supplier_id' => $supplierId,
+                            'product_id' => $product->id,
+                            'purchase_price' => $validated['pur_price'] ?? 0,
+                        ]);
+                    }
+                }
+
+                // Handle opening balance in head office store
+                if (($validated['opening_balance'] ?? 0) > 0) {
+                    HeadOfficeStore::create([
+                        'product_id' => $product->id,
+                        'entrydate' => now()->format('Y-m-d'),
+                        'balanceinhand' => $validated['opening_balance'],
+                        'stockbalancebefore' => 0,
+                        'stockbalanceafter' => $validated['opening_balance'],
+                        'opening_balance' => $validated['opening_balance'],
+                        'status' => 1,
+                        'validity' => 1,
+                    ]);
+                }
+
+                // Handle branch store
+                $outletId = $validated['outlet_id'] ?? 1;
+                BranchStore::create([
                     'product_id' => $product->id,
                     'entrydate' => now()->format('Y-m-d'),
-                    'balanceinhand' => $validated['opening_balance'],
+                    'balanceinhand' => $validated['opening_balance'] ?? 0,
                     'stockbalancebefore' => 0,
-                    'stockbalanceafter' => $validated['opening_balance'],
-                    'opening_balance' => $validated['opening_balance'],
+                    'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                    'sale_price' => $validated['sale_price'] ?? 0,
+                    'vat_rate' => $validated['vat_rate'] ?? 0,
+                    'sd_rate' => $validated['sd_rate'] ?? 0,
+                    'scharge' => $validated['scharge'] ?? 0,
+                    'outlet_id' => $outletId,
+                    'opening_balance' => $validated['opening_balance'] ?? 0,
+                    'food_type' => $validated['food_type_id'] ?? null,
                     'status' => 1,
                     'validity' => 1,
                 ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Product created successfully!',
+                    'data' => $product,
+                ], 201);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
             }
-
-            // Handle branch store
-            $outletId = $validated['outlet_id'] ?? 1;
-            BranchStore::create([
-                'product_id' => $product->id,
-                'entrydate' => now()->format('Y-m-d'),
-                'balanceinhand' => $validated['opening_balance'] ?? 0,
-                'stockbalancebefore' => 0,
-                'stockbalanceafter' => $validated['opening_balance'] ?? 0,
-                'sale_price' => $validated['sale_price'] ?? 0,
-                'vat_rate' => $validated['vat_rate'] ?? 0,
-                'sd_rate' => $validated['sd_rate'] ?? 0,
-                'scharge' => $validated['scharge'] ?? 0,
-                'outlet_id' => $outletId,
-                'opening_balance' => $validated['opening_balance'] ?? 0,
-                'food_type' => $validated['food_type_id'] ?? null,
-                'status' => 1,
-                'validity' => 1,
-            ]);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Product created successfully!',
-                'data' => $product,
-            ], 201);
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
@@ -251,12 +295,12 @@ class ProductController extends Controller
                 ], 404);
             }
 
-            $validated = $request->validate([
+            $rules = [
                 'product_name' => 'sometimes|string|max:255',
                 'product_code' => 'sometimes|string|max:115|unique:product,product_code,' . $id,
-                'category_id' => 'sometimes|exists:categories,id',
-                'unit_id' => 'sometimes|exists:units,id',
-                'food_type_id' => 'nullable|exists:food_types,id', // ✅ Added
+                'category_id' => 'sometimes|exists:category_models,id',
+                'unit_id' => 'sometimes|exists:unitls,id',
+                'food_type_id' => 'nullable|exists:food_types,id',
                 'cost_price' => 'nullable|numeric|min:0',
                 'pur_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
@@ -264,10 +308,22 @@ class ProductController extends Controller
                 'vat_rate' => 'nullable|integer|min:0|max:100',
                 'sd_rate' => 'nullable|integer|min:0|max:100',
                 'scharge' => 'nullable|numeric|min:0',
-                'product_type' => 'nullable|integer|in:1,2,3',
+                'product_type' => 'sometimes|integer|in:1,2,3',
                 'status' => 'nullable|integer|in:0,1',
                 'validity' => 'nullable|integer|in:0,1',
-            ]);
+                'expire' => 'nullable|string|max:20',
+            ];
+
+            // Conditional validation for supplier_id
+            if ($request->product_type == 2) {
+                $rules['supplier_id'] = 'required|array|min:1';
+                $rules['supplier_id.*'] = 'exists:suppliersetup,id';
+            } else {
+                $rules['supplier_id'] = 'nullable|array';
+                $rules['supplier_id.*'] = 'exists:suppliersetup,id';
+            }
+
+            $validated = $request->validate($rules);
 
             // Handle product image upload
             if ($request->hasFile('product_image')) {
@@ -283,18 +339,37 @@ class ProductController extends Controller
                 $validated['imagepath'] = 'storage/' . $path;
             }
 
-            $product->update($validated);
+            DB::beginTransaction();
 
-            // Update suppliers
-            if (isset($validated['supplier_id'])) {
-                $product->suppliers()->sync($validated['supplier_id']);
+            try {
+                $product->update($validated);
+
+                // Update suppliers
+                if (isset($validated['supplier_id'])) {
+                    // Delete existing supplier relations
+                    SupplierProduct::where('product_id', $product->id)->delete();
+
+                    // Create new supplier relations
+                    foreach ($validated['supplier_id'] as $supplierId) {
+                        SupplierProduct::create([
+                            'supplier_id' => $supplierId,
+                            'product_id' => $product->id,
+                            'purchase_price' => $validated['pur_price'] ?? $product->pur_price,
+                        ]);
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Product updated successfully!',
+                    'data' => $product,
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
             }
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Product updated successfully!',
-                'data' => $product,
-            ]);
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
@@ -331,15 +406,25 @@ class ProductController extends Controller
                 Storage::disk('public')->delete($oldPath);
             }
 
-            $product->branchStores()->delete();
-            $product->headOfficeStore()->delete();
-            $product->suppliers()->detach();
-            $product->delete();
+            DB::beginTransaction();
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Product deleted successfully'
-            ]);
+            try {
+                $product->branchStores()->delete();
+                $product->headOfficeStore()->delete();
+                $product->headOfficeStocks()->delete();
+                SupplierProduct::where('product_id', $product->id)->delete();
+                $product->delete();
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Product deleted successfully'
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
         } catch (\Exception $e) {
             Log::error('Product delete error: ' . $e->getMessage());
             return response()->json([
@@ -426,6 +511,110 @@ class ProductController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get products with stock.
+     */
+    public function getWithStock(Request $request)
+    {
+        try {
+            $outletId = $request->outlet_id ?? 1;
+
+            $products = Product::with(['category', 'unit', 'foodType'])
+                ->active()
+                ->get()
+                ->map(function ($product) use ($outletId) {
+                    $branchStore = BranchStore::where('product_id', $product->id)
+                        ->where('outlet_id', $outletId)
+                        ->first();
+
+                    $headOfficeStock = HeadOfficeStock::where('product_id', $product->id)
+                        ->orderBy('id', 'desc')
+                        ->first();
+
+                    return [
+                        'id' => $product->id,
+                        'product_name' => $product->product_name,
+                        'product_code' => $product->product_code,
+                        'price' => $product->sale_price ?? $product->pur_price ?? 0,
+                        'pur_price' => $product->pur_price,
+                        'sale_price' => $product->sale_price,
+                        'branch_stock' => $branchStore ? $branchStore->balanceinhand : 0,
+                        'head_office_stock' => $headOfficeStock ? $headOfficeStock->current_balance : 0,
+                        'total_stock' => ($branchStore ? $branchStore->balanceinhand : 0) +
+                                       ($headOfficeStock ? $headOfficeStock->current_balance : 0),
+                        'category_name' => $product->category ? $product->category->category_name : null,
+                        'unit_name' => $product->unit ? $product->unit->unit_name : null,
+                        'food_type_name' => $product->foodType ? $product->foodType->type_name : null,
+                        'product_image' => $product->product_image,
+                        'vat_rate' => $product->vat_rate,
+                        'sd_rate' => $product->sd_rate,
+                    ];
+                });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $products
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get products with stock error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update product stock.
+     */
+    public function updateStock(Request $request, $id)
+    {
+        try {
+            $validated = $request->validate([
+                'stock' => 'required|numeric|min:0',
+                'outlet_id' => 'nullable|exists:outlets,id',
+            ]);
+
+            $outletId = $validated['outlet_id'] ?? 1;
+
+            $branchStore = BranchStore::where('product_id', $id)
+                ->where('outlet_id', $outletId)
+                ->first();
+
+            if (!$branchStore) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Product not found in branch store'
+                ], 404);
+            }
+
+            $branchStore->prv_stock = $branchStore->stock;
+            $branchStore->stock = $validated['stock'];
+            $branchStore->after_stock = $validated['stock'];
+            $branchStore->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Stock updated successfully',
+                'data' => $branchStore
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Update stock error: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update stock',
                 'error' => $e->getMessage()
             ], 500);
         }

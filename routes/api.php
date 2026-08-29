@@ -150,13 +150,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ==================== COMPANY ROUTES ====================
     Route::prefix('companies')->group(function () {
-        Route::get('/', [CompanyController::class, 'index']);           // Get all companies
-        Route::post('/', [CompanyController::class, 'store']);          // Create company
-        Route::get('/active', [CompanyController::class, 'getActive']); // Get active companies
-        Route::get('/{id}', [CompanyController::class, 'show']);        // Get single company
-        Route::put('/{id}', [CompanyController::class, 'update']);      // Update company
-        Route::delete('/{id}', [CompanyController::class, 'destroy']);  // Delete company
-        Route::post('/{id}/restore', [CompanyController::class, 'restore']); // Restore company
+        Route::get('/', [CompanyController::class, 'index']);
+        Route::get('/all', [CompanyController::class, 'getAll']);
+        Route::get('/active', [CompanyController::class, 'getActive']);
+        Route::get('/pay-type/{payType}', [CompanyController::class, 'getByPayType']);
+        Route::post('/', [CompanyController::class, 'store']);
+        Route::get('/{id}', [CompanyController::class, 'show']);
+        Route::put('/{id}', [CompanyController::class, 'update']);
+        Route::delete('/{id}', [CompanyController::class, 'destroy']);
+        Route::post('/{id}/restore', [CompanyController::class, 'restore']);
     });
 
     Route::prefix('outlets')->group(function () {
