@@ -2,21 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Product;
-use App\Models\Category;
-use App\Models\Unit;
-use App\Models\Supplier;
-use App\Models\FoodType;
 use App\Models\BranchStore;
-use App\Models\HeadOfficeStore;
+use App\Models\Category;
+use App\Models\FoodType;
 use App\Models\HeadOfficeStock;
-use App\Models\SupplierProduct;
 use App\Models\Outlet;
+use App\Models\Product;
+use App\Models\Supplier;
+use App\Models\SupplierProduct;
+use App\Models\Unit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -41,8 +40,7 @@ class ProductController extends Controller
             $suppliers = Supplier::where('validity', 1)->get();
 
             // Get food types from database
-            $foodTypes = FoodType::where('validity', 1)
-                ->get();
+            $foodTypes = FoodType::where('validity', 1)->get();
 
             return response()->json([
                 'status' => 'success',
@@ -52,14 +50,15 @@ class ProductController extends Controller
                     'units' => $units,
                     'suppliers' => $suppliers,
                     'food_types' => $foodTypes,
-                ]
+                ],
             ]);
         } catch (\Exception $e) {
-            Log::error('Product create error: ' . $e->getMessage());
+            Log::error('Product create error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to load product data',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -67,10 +66,18 @@ class ProductController extends Controller
     /**
      * Store a newly created product.
      */
+    /**
+     * Store a newly created product.
+     */
+    /**
+     * Store a newly created product.
+     */
+    /**
+     * Store a newly created product.
+     */
     public function store(Request $request)
     {
         try {
-            // ✅ Basic validation rules
             $rules = [
                 'product_name' => 'required|string|max:255',
                 'product_code' => 'required|string|max:115|unique:product,product_code',
@@ -81,15 +88,15 @@ class ProductController extends Controller
                 'pur_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
                 'opening_balance' => 'nullable|numeric|min:0',
-                'vat_rate' => 'nullable|integer|min:0|max:100',
-                'sd_rate' => 'nullable|integer|min:0|max:100',
+                'vat_rate' => 'nullable|numeric|min:0|max:100',
+                'sd_rate' => 'nullable|numeric|min:0|max:100',
                 'scharge' => 'nullable|numeric|min:0',
                 'product_type' => 'required|integer|in:1,2,3',
                 'expire' => 'nullable|string|max:20',
                 'dis_status' => 'nullable|integer|in:0,1',
             ];
 
-            // ✅ Conditional validation: supplier_id required for raw materials (product_type = 2)
+            // Conditional validation: supplier_id required for raw materials (product_type = 2)
             if ($request->product_type == 2) {
                 $rules['supplier_id'] = 'required|array|min:1';
                 $rules['supplier_id.*'] = 'exists:suppliersetup,id';
@@ -107,14 +114,14 @@ class ProductController extends Controller
                 $productImage = null;
                 if ($request->hasFile('product_image')) {
                     $image = $request->file('product_image');
-                    $filename = time() . '_' . $image->getClientOriginalName();
+                    $filename = time().'_'.$image->getClientOriginalName();
                     $path = $image->storeAs('products', $filename, 'public');
-                    $productImage = 'storage/' . $path;
+                    $productImage = 'storage/'.$path;
                 }
 
                 // Prepare supplier_id
                 $supplierId = null;
-                if (!empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
+                if (! empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
                     $supplierId = implode(',', $validated['supplier_id']);
                 }
 
@@ -153,35 +160,45 @@ class ProductController extends Controller
                     $product->save();
                 }
 
-                // ✅ If raw material, create supplier product mapping
-                if ($validated['product_type'] == 2 && !empty($validated['supplier_id'])) {
-                    foreach ($validated['supplier_id'] as $supplierId) {
+                // If raw material (product_type = 2), create supplier product mapping
+                if ($validated['product_type'] == 2 && ! empty($validated['supplier_id'])) {
+                    foreach ($validated['supplier_id'] as $sId) {
                         SupplierProduct::create([
-                            'supplier_id' => $supplierId,
+                            'supplier_id' => $sId,
                             'product_id' => $product->id,
                             'purchase_price' => $validated['pur_price'] ?? 0,
+                            'validity' => 1,
                         ]);
                     }
                 }
 
-                // ✅ Handle opening balance in head office store
-                if (($validated['opening_balance'] ?? 0) > 0) {
-                    HeadOfficeStock::create([
-                        'product_id' => $product->id,
-                        'entrydate' => now()->format('Y-m-d'),
-                        'balanceinhand' => $validated['opening_balance'],
-                        'stockbalancebefore' => 0,
-                        'stockbalanceafter' => $validated['opening_balance'],
-                        'opening_balance' => $validated['opening_balance'],
-                        'status' => 1,
-                        'validity' => 1,
-                    ]);
+                // ✅ Head Office Stock entry - supplier_id = null if no supplier exists
+                $openingBalance = $validated['opening_balance'] ?? 0;
+                $purchasePrice = $validated['pur_price'] ?? 0;
+
+                // Get first supplier ID or null if no supplier
+                $firstSupplierId = null;
+                if (! empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
+                    $firstSupplierId = (int) $validated['supplier_id'][0];
                 }
 
-                // ✅ Get all active outlets
+                HeadOfficeStock::create([
+                    'product_id' => $product->id,
+                    'supplier_id' => $firstSupplierId, // ✅ Pass null instead of 0
+                    'entry_date' => now()->format('Y-m-d'),
+                    'quantity' => $openingBalance,
+                    'purchase_price' => $purchasePrice,
+                    'total_amount' => $purchasePrice * $openingBalance,
+                    'previous_balance' => 0,
+                    'current_balance' => $openingBalance,
+                    'status' => 1,
+                    'validity' => 1,
+                ]);
+
+                // Get all active outlets
                 $outlets = Outlet::where('status', 1)->where('validity', 1)->get();
 
-                // ✅ If no outlets found, create for default outlet
+                // If no outlets found, create default
                 if ($outlets->isEmpty()) {
                     $defaultOutlet = Outlet::find(1);
                     if ($defaultOutlet) {
@@ -201,24 +218,21 @@ class ProductController extends Controller
                     }
                 }
 
-                // ✅ Create branch store entry for each outlet
+                // Create branch store entry for each outlet
                 foreach ($outlets as $outlet) {
                     BranchStore::create([
                         'product_id' => $product->id,
                         'entrydate' => now()->format('Y-m-d'),
-                        'balanceinhand' => $validated['opening_balance'] ?? 0,
+                        'balanceinhand' => $openingBalance,
                         'stockbalancebefore' => 0,
-                        'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                        'stockbalanceafter' => $openingBalance,
                         'sale_price' => $validated['sale_price'] ?? 0,
                         'vat_rate' => $validated['vat_rate'] ?? 0,
                         'sd_rate' => $validated['sd_rate'] ?? 0,
                         'scharge' => $validated['scharge'] ?? 0,
                         'outlet_id' => $outlet->id,
-                        'opening_balance' => $validated['opening_balance'] ?? 0,
+                        'opening_balance' => $openingBalance,
                         'food_type' => $validated['food_type_id'] ?? null,
-                        'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : null,
-                        'purchase_price' => $validated['pur_price'] ?? 0,
-                        'total_amount' => ($validated['pur_price'] ?? 0) * ($validated['opening_balance'] ?? 0),
                         'status' => 1,
                         'validity' => 1,
                     ]);
@@ -228,7 +242,7 @@ class ProductController extends Controller
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Product created successfully for all outlets!',
+                    'message' => 'Product created successfully for head office and all outlets!',
                     'data' => $product,
                     'outlets_count' => $outlets->count(),
                 ], 201);
@@ -243,11 +257,12 @@ class ProductController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Product store error: ' . $e->getMessage());
+            Log::error('Product store error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -264,14 +279,15 @@ class ProductController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $products
+                'data' => $products,
             ]);
         } catch (\Exception $e) {
-            Log::error('Product index error: ' . $e->getMessage());
+            Log::error('Product index error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -285,27 +301,31 @@ class ProductController extends Controller
             $product = Product::with(['category', 'unit', 'foodType', 'suppliers', 'branchStores', 'headOfficeStore'])
                 ->find($id);
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
             return response()->json([
                 'status' => 'success',
-                'data' => $product
+                'data' => $product,
             ]);
         } catch (\Exception $e) {
-            Log::error('Product show error: ' . $e->getMessage());
+            Log::error('Product show error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+    /**
+     * Update the specified product.
+     */
     /**
      * Update the specified product.
      */
@@ -314,16 +334,16 @@ class ProductController extends Controller
         try {
             $product = Product::find($id);
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
             $rules = [
                 'product_name' => 'sometimes|string|max:255',
-                'product_code' => 'sometimes|string|max:115|unique:product,product_code,' . $id,
+                'product_code' => 'sometimes|string|max:115|unique:product,product_code,'.$id,
                 'category_id' => 'sometimes|exists:category_models,id',
                 'unit_id' => 'sometimes|exists:unitls,id',
                 'food_type_id' => 'nullable|exists:food_types,id',
@@ -331,8 +351,8 @@ class ProductController extends Controller
                 'pur_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
                 'opening_balance' => 'nullable|numeric|min:0',
-                'vat_rate' => 'nullable|integer|min:0|max:100',
-                'sd_rate' => 'nullable|integer|min:0|max:100',
+                'vat_rate' => 'nullable|numeric|min:0|max:100',
+                'sd_rate' => 'nullable|numeric|min:0|max:100',
                 'scharge' => 'nullable|numeric|min:0',
                 'product_type' => 'sometimes|integer|in:1,2,3',
                 'status' => 'nullable|integer|in:0,1',
@@ -360,80 +380,113 @@ class ProductController extends Controller
                 }
 
                 $image = $request->file('product_image');
-                $filename = time() . '_' . $image->getClientOriginalName();
+                $filename = time().'_'.$image->getClientOriginalName();
                 $path = $image->storeAs('products', $filename, 'public');
-                $validated['product_image'] = 'storage/' . $path;
-                $validated['imagepath'] = 'storage/' . $path;
+                $validated['product_image'] = 'storage/'.$path;
+                $validated['imagepath'] = 'storage/'.$path;
             }
 
             DB::beginTransaction();
 
             try {
-                // ✅ Update product
-                $product->update($validated);
+                // Update product — supplier_id handled separately
+                $productUpdateData = $validated;
+                unset($productUpdateData['supplier_id']);
+                $product->update($productUpdateData);
 
-                // ✅ Prepare supplier_id
-                $supplierId = null;
-                if (!empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
-                    $supplierId = implode(',', $validated['supplier_id']);
-                    $product->supplier_id = $supplierId;
+                // Prepare supplier_id (comma separated string on product table)
+                if (! empty($validated['supplier_id']) && is_array($validated['supplier_id'])) {
+                    $product->supplier_id = implode(',', $validated['supplier_id']);
                     $product->save();
                 }
 
-                // ✅ Update suppliers mapping
-                if (isset($validated['supplier_id'])) {
-                    // Delete existing supplier relations
+                // Determine effective product_type
+                $effectiveProductType = $validated['product_type'] ?? $product->product_type;
+
+                // Update suppliers mapping — ONLY for raw materials
+                if ($effectiveProductType == 2 && isset($validated['supplier_id'])) {
                     SupplierProduct::where('product_id', $product->id)->delete();
 
-                    // Create new supplier relations
-                    foreach ($validated['supplier_id'] as $supplierId) {
+                    foreach ($validated['supplier_id'] as $sId) {
                         SupplierProduct::create([
-                            'supplier_id' => $supplierId,
+                            'supplier_id' => $sId,
                             'product_id' => $product->id,
                             'purchase_price' => $validated['pur_price'] ?? $product->pur_price,
+                            'validity' => 1,
                         ]);
                     }
+                } elseif ($effectiveProductType != 2) {
+                    SupplierProduct::where('product_id', $product->id)->delete();
                 }
 
-                // ✅ Get all active outlets
+                // ✅ Update Head Office Stock - ALL fields provided
+                $openingBalance = $validated['opening_balance'] ?? $product->opening_balance;
+                $purchasePrice = $validated['pur_price'] ?? $product->pur_price;
+
+                // Get first supplier ID or null if no supplier
+                $firstSupplierId = null;
+                if (! empty($product->supplier_id)) {
+                    $supplierIds = explode(',', $product->supplier_id);
+                    $firstSupplierId = (int) $supplierIds[0];
+                }
+
+                $headOfficeStock = HeadOfficeStock::where('product_id', $product->id)
+                    ->orderBy('id', 'desc')
+                    ->first();
+
+                if ($headOfficeStock) {
+                    $headOfficeStock->update([
+                        'quantity' => $openingBalance,
+                        'purchase_price' => $purchasePrice,
+                        'total_amount' => $purchasePrice * $openingBalance,
+                        'current_balance' => $openingBalance,
+                    ]);
+                } else {
+                    HeadOfficeStock::create([
+                        'product_id' => $product->id,
+                        'supplier_id' => $firstSupplierId, // ✅ Pass null instead of 0
+                        'entry_date' => now()->format('Y-m-d'),
+                        'quantity' => $openingBalance,
+                        'purchase_price' => $purchasePrice,
+                        'total_amount' => $purchasePrice * $openingBalance,
+                        'previous_balance' => 0,
+                        'current_balance' => $openingBalance,
+                        'status' => 1,
+                        'validity' => 1,
+                    ]);
+                }
+
+                // Get all active outlets
                 $outlets = Outlet::where('status', 1)->where('validity', 1)->get();
 
-                // ✅ Update branch store for each outlet
+                // Update branch store for each outlet
                 foreach ($outlets as $outlet) {
                     $branchStore = BranchStore::where('product_id', $product->id)
                         ->where('outlet_id', $outlet->id)
                         ->first();
 
                     if ($branchStore) {
-                        // ✅ Update existing branch store
                         $branchStore->update([
                             'sale_price' => $validated['sale_price'] ?? $branchStore->sale_price,
                             'vat_rate' => $validated['vat_rate'] ?? $branchStore->vat_rate,
                             'sd_rate' => $validated['sd_rate'] ?? $branchStore->sd_rate,
                             'scharge' => $validated['scharge'] ?? $branchStore->scharge,
                             'food_type' => $validated['food_type_id'] ?? $branchStore->food_type,
-                            'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : $branchStore->supplier_id,
-                            'purchase_price' => $validated['pur_price'] ?? $branchStore->purchase_price,
-                            'total_amount' => ($validated['pur_price'] ?? $branchStore->purchase_price) * ($branchStore->balanceinhand ?? 0),
                         ]);
                     } else {
-                        // ✅ Create new branch store if not exists
                         BranchStore::create([
                             'product_id' => $product->id,
                             'entrydate' => now()->format('Y-m-d'),
-                            'balanceinhand' => $validated['opening_balance'] ?? 0,
+                            'balanceinhand' => $openingBalance,
                             'stockbalancebefore' => 0,
-                            'stockbalanceafter' => $validated['opening_balance'] ?? 0,
+                            'stockbalanceafter' => $openingBalance,
                             'sale_price' => $validated['sale_price'] ?? 0,
                             'vat_rate' => $validated['vat_rate'] ?? 0,
                             'sd_rate' => $validated['sd_rate'] ?? 0,
                             'scharge' => $validated['scharge'] ?? 0,
                             'outlet_id' => $outlet->id,
-                            'opening_balance' => $validated['opening_balance'] ?? 0,
+                            'opening_balance' => $openingBalance,
                             'food_type' => $validated['food_type_id'] ?? null,
-                            'supplier_id' => !empty($validated['supplier_id']) ? $validated['supplier_id'][0] : null,
-                            'purchase_price' => $validated['pur_price'] ?? 0,
-                            'total_amount' => ($validated['pur_price'] ?? 0) * ($validated['opening_balance'] ?? 0),
                             'status' => 1,
                             'validity' => 1,
                         ]);
@@ -458,11 +511,12 @@ class ProductController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Product update error: ' . $e->getMessage());
+            Log::error('Product update error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -475,10 +529,10 @@ class ProductController extends Controller
         try {
             $product = Product::find($id);
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
@@ -490,7 +544,6 @@ class ProductController extends Controller
             DB::beginTransaction();
 
             try {
-                // ✅ Delete branch stores for all outlets
                 $product->branchStores()->delete();
                 $product->headOfficeStore()->delete();
                 $product->headOfficeStocks()->delete();
@@ -501,18 +554,19 @@ class ProductController extends Controller
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Product deleted successfully from all outlets'
+                    'message' => 'Product deleted successfully from all outlets',
                 ]);
             } catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
             }
         } catch (\Exception $e) {
-            Log::error('Product delete error: ' . $e->getMessage());
+            Log::error('Product delete error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -525,10 +579,10 @@ class ProductController extends Controller
         try {
             $product = Product::find($id);
 
-            if (!$product) {
+            if (! $product) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Product not found'
+                    'message' => 'Product not found',
                 ], 404);
             }
 
@@ -539,14 +593,15 @@ class ProductController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Product restored successfully',
-                'data' => $product
+                'data' => $product,
             ]);
         } catch (\Exception $e) {
-            Log::error('Product restore error: ' . $e->getMessage());
+            Log::error('Product restore error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to restore product',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -589,11 +644,12 @@ class ProductController extends Controller
 
             return response()->json($productsWithStock);
         } catch (\Exception $e) {
-            Log::error('Get products by category error: ' . $e->getMessage());
+            Log::error('Get products by category error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -626,9 +682,9 @@ class ProductController extends Controller
                         'pur_price' => $product->pur_price,
                         'sale_price' => $product->sale_price,
                         'branch_stock' => $branchStore ? $branchStore->balanceinhand : 0,
-                        'head_office_stock' => $headOfficeStock ? $headOfficeStock->current_balance : 0,
+                        'head_office_stock' => $headOfficeStock ? $headOfficeStock->stockbalanceafter : 0,
                         'total_stock' => ($branchStore ? $branchStore->balanceinhand : 0) +
-                                       ($headOfficeStock ? $headOfficeStock->current_balance : 0),
+                                       ($headOfficeStock ? $headOfficeStock->stockbalanceafter : 0),
                         'category_name' => $product->category ? $product->category->category_name : null,
                         'unit_name' => $product->unit ? $product->unit->unit_name : null,
                         'food_type_name' => $product->foodType ? $product->foodType->type_name : null,
@@ -640,14 +696,72 @@ class ProductController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $products
+                'data' => $products,
             ]);
         } catch (\Exception $e) {
-            Log::error('Get products with stock error: ' . $e->getMessage());
+            Log::error('Get products with stock error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * ✅ ADDED: Get stock for a specific product
+     */
+    public function getStock($id)
+    {
+        try {
+            $product = Product::find($id);
+
+            if (! $product) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Product not found',
+                ], 404);
+            }
+
+            // Get branch stock for all outlets
+            $branchStores = BranchStore::where('product_id', $id)->get();
+
+            // Get head office stock
+            $headOfficeStock = HeadOfficeStock::where('product_id', $id)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'product_id' => $product->id,
+                    'product_name' => $product->product_name,
+                    'product_code' => $product->product_code,
+                    'branch_stores' => $branchStores->map(function ($store) {
+                        return [
+                            'outlet_id' => $store->outlet_id,
+                            'balanceinhand' => $store->balanceinhand,
+                            'stockbalancebefore' => $store->stockbalancebefore,
+                            'stockbalanceafter' => $store->stockbalanceafter,
+                            'opening_balance' => $store->opening_balance,
+                        ];
+                    }),
+                    'head_office_stock' => $headOfficeStock ? [
+                        'balanceinhand' => $headOfficeStock->balanceinhand,
+                        'stockbalancebefore' => $headOfficeStock->stockbalancebefore,
+                        'stockbalanceafter' => $headOfficeStock->stockbalanceafter,
+                        'opening_balance' => $headOfficeStock->opening_balance,
+                    ] : null,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get stock error: '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch stock data',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -684,18 +798,28 @@ class ProductController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $products,
-                'outlet_id' => $outletId
+                'outlet_id' => $outletId,
             ]);
         } catch (\Exception $e) {
-            Log::error('Get products by outlet error: ' . $e->getMessage());
+            Log::error('Get products by outlet error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to fetch products',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+    /**
+     * Update product stock.
+     */
+    /**
+     * Update product stock.
+     */
+    /**
+     * Update product stock.
+     */
     /**
      * Update product stock.
      */
@@ -708,28 +832,102 @@ class ProductController extends Controller
             ]);
 
             $outletId = $validated['outlet_id'] ?? 1;
+            $newStock = $validated['stock'];
 
-            $branchStore = BranchStore::where('product_id', $id)
-                ->where('outlet_id', $outletId)
-                ->first();
+            DB::beginTransaction();
 
-            if (!$branchStore) {
+            try {
+                // Update Branch Store
+                $branchStore = BranchStore::where('product_id', $id)
+                    ->where('outlet_id', $outletId)
+                    ->first();
+
+                if (! $branchStore) {
+                    $product = Product::find($id);
+                    if (! $product) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Product not found',
+                        ], 404);
+                    }
+
+                    $branchStore = BranchStore::create([
+                        'product_id' => $id,
+                        'entrydate' => now()->format('Y-m-d'),
+                        'balanceinhand' => $newStock,
+                        'stockbalancebefore' => 0,
+                        'stockbalanceafter' => $newStock,
+                        'sale_price' => $product->sale_price ?? 0,
+                        'vat_rate' => $product->vat_rate ?? 0,
+                        'sd_rate' => $product->sd_rate ?? 0,
+                        'scharge' => $product->scharge ?? 0,
+                        'outlet_id' => $outletId,
+                        'opening_balance' => $newStock,
+                        'food_type' => $product->food_type_id,
+                        'status' => 1,
+                        'validity' => 1,
+                    ]);
+                } else {
+                    $branchStore->stockbalancebefore = $branchStore->balanceinhand;
+                    $branchStore->balanceinhand = $newStock;
+                    $branchStore->stockbalanceafter = $newStock;
+                    $branchStore->save();
+                }
+
+                // ✅ Update Head Office Stock - ALL fields provided
+                // In the updateStock() method, replace the Head Office Stock section with:
+
+                // ✅ Update Head Office Stock - supplier_id = null if no supplier exists
+                $headOfficeStock = HeadOfficeStock::where('product_id', $id)
+                    ->orderBy('id', 'desc')
+                    ->first();
+
+                if ($headOfficeStock) {
+                    $headOfficeStock->previous_balance = $headOfficeStock->current_balance;
+                    $headOfficeStock->quantity = $newStock;
+                    $headOfficeStock->current_balance = $newStock;
+                    $headOfficeStock->total_amount = $headOfficeStock->purchase_price * $newStock;
+                    $headOfficeStock->save();
+                } else {
+                    $product = Product::find($id);
+                    if ($product) {
+                        // Get first supplier ID or null if no supplier
+                        $firstSupplierId = null;
+                        if (!empty($product->supplier_id)) {
+                            $supplierIds = explode(',', $product->supplier_id);
+                            $firstSupplierId = (int) $supplierIds[0];
+                        }
+
+                        HeadOfficeStock::create([
+                            'product_id' => $id,
+                            'supplier_id' => $firstSupplierId, // ✅ Pass null instead of 0
+                            'entry_date' => now()->format('Y-m-d'),
+                            'quantity' => $newStock,
+                            'purchase_price' => $product->pur_price ?? 0,
+                            'total_amount' => ($product->pur_price ?? 0) * $newStock,
+                            'previous_balance' => 0,
+                            'current_balance' => $newStock,
+                            'status' => 1,
+                            'validity' => 1,
+                        ]);
+                    }
+                }
+
+                DB::commit();
+
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'Product not found in branch store'
-                ], 404);
+                    'status' => 'success',
+                    'message' => 'Stock updated successfully',
+                    'data' => [
+                        'branch_store' => $branchStore,
+                        'head_office_stock' => $headOfficeStock,
+                        'outlet_id' => $outletId,
+                    ],
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
             }
-
-            $branchStore->prv_stock = $branchStore->stock;
-            $branchStore->stock = $validated['stock'];
-            $branchStore->after_stock = $validated['stock'];
-            $branchStore->save();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Stock updated successfully',
-                'data' => $branchStore
-            ]);
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
@@ -737,11 +935,12 @@ class ProductController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Update stock error: ' . $e->getMessage());
+            Log::error('Update stock error: '.$e->getMessage());
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update stock',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

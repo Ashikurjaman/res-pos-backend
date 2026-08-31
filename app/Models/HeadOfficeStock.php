@@ -2,38 +2,41 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class HeadOfficeStock extends Model
 {
-    use HasFactory;
-
     protected $table = 'head_office_stock';
 
     protected $fillable = [
         'product_id',
-        'entrydate',
-        'balanceinhand',
-        'stockbalancebefore',
-        'stockbalanceafter',
+        'supplier_id',
+        'entry_date',
+        'quantity',
+        'purchase_price',
+        'total_amount',
+        'previous_balance',
+        'current_balance',
         'status',
-        'opening_balance',
         'validity',
     ];
 
     protected $casts = [
-        'entrydate' => 'date',
-        'balanceinhand' => 'decimal:3',
-        'stockbalancebefore' => 'decimal:3',
-        'stockbalanceafter' => 'decimal:3',
-        'opening_balance' => 'decimal:3',
-        'status' => 'integer',
-        'validity' => 'integer',
+        'quantity' => 'decimal:3',
+        'purchase_price' => 'decimal:3',
+        'total_amount' => 'decimal:3',
+        'previous_balance' => 'decimal:3',
+        'current_balance' => 'decimal:3',
+        'entry_date' => 'date',
     ];
 
     public function product()
     {
-        return $this->belongsTo(Product::class, 'product_id');
+        return $this->belongsTo(Product::class);
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
     }
 }

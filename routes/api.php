@@ -10,6 +10,9 @@ use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\UnitController;
+use App\Http\Controllers\OutletRequestController;
+use App\Http\Controllers\OutletDespatchController;
+use App\Http\Controllers\OutletReceiveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -59,7 +62,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/bulk-delete', [AuthController::class, 'bulkDelete']);
     });
 
-
     // Supplier Routes
     Route::prefix('suppliers')->middleware('auth:sanctum')->group(function () {
         Route::get('/', [SupplierController::class, 'index']);
@@ -74,20 +76,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ---- Products ----
     Route::prefix('products')->group(function () {
-        // ✅ This route should be GET, not POST
-        Route::get('/next-code', [ProductController::class, 'create']);
         Route::get('/create-data', [ProductController::class, 'create']);
         Route::post('/', [ProductController::class, 'store']);
         Route::get('/', [ProductController::class, 'index']);
-        Route::get('/with-stock', [ProductController::class, 'getProductsWithStock']);
+        Route::get('/with-stock', [ProductController::class, 'getWithStock']);
         Route::get('/by-category', [ProductController::class, 'getProductsByCategory']);
         Route::get('/{id}', [ProductController::class, 'show']);
+        Route::get('/{id}/stock', [ProductController::class, 'getStock']); // ✅ Added
         Route::put('/{id}', [ProductController::class, 'update']);
-        Route::delete('/{id}', [ProductController::class, 'destroy']);
-        Route::get('/{id}/stock', [ProductController::class, 'getStock']);
         Route::put('/{id}/stock', [ProductController::class, 'updateStock']);
+        Route::delete('/{id}', [ProductController::class, 'destroy']);
+        Route::post('/{id}/restore', [ProductController::class, 'restore']);
     });
-    Route::get('/products-load', [ProductController::class, 'getProduct']);
 
     // ---- Category ----
     // routes/api.php
@@ -182,6 +182,29 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/restore', [FoodTypeController::class, 'restore']);
         Route::post('/{id}/toggle', [FoodTypeController::class, 'toggleOnline']);
     });
+
+
+    Route::prefix('stock-requests')->group(function () {
+            Route::get('/', [OutletRequestController::class, 'index']);
+            Route::post('/', [OutletRequestController::class, 'store']);
+            Route::get('/pending-count', [OutletRequestController::class, 'pendingCount']);
+            Route::get('/{id}', [OutletRequestController::class, 'show']);
+            Route::post('/{id}/approve', [OutletRequestController::class, 'approve']);
+        });
+
+        // ============ DESPATCH ROUTES ============
+        Route::prefix('stock-despatches')->group(function () {
+            Route::get('/', [OutletDespatchController::class, 'index']);
+            Route::post('/', [OutletDespatchController::class, 'store']);
+            Route::get('/{id}', [OutletDespatchController::class, 'show']);
+        });
+
+        // ============ RECEIVE ROUTES ============
+        Route::prefix('stock-receives')->group(function () {
+            Route::get('/', [OutletReceiveController::class, 'index']);
+            Route::post('/', [OutletReceiveController::class, 'store']);
+            Route::get('/{id}', [OutletReceiveController::class, 'show']);
+        });
 });
 
 // ==================== TEST ROUTES ====================
