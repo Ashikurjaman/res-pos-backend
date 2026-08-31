@@ -166,7 +166,7 @@ class ProductController extends Controller
 
                 // ✅ Handle opening balance in head office store
                 if (($validated['opening_balance'] ?? 0) > 0) {
-                    HeadOfficeStore::create([
+                    HeadOfficeStock::create([
                         'product_id' => $product->id,
                         'entrydate' => now()->format('Y-m-d'),
                         'balanceinhand' => $validated['opening_balance'],
