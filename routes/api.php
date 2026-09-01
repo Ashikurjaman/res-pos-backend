@@ -6,6 +6,7 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\FoodTypeController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\TableController;
@@ -59,7 +60,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [AuthController::class, 'destroy']);
         Route::put('/{id}/status', [AuthController::class, 'updateStatus']);
         Route::put('/{id}/role', [AuthController::class, 'updateRole']);
+        Route::put('/{id}/permissions', [AuthController::class, 'updatePermissions']);
         Route::post('/bulk-delete', [AuthController::class, 'bulkDelete']);
+    });
+
+    // ---- Roles & Permissions (Dynamic RBAC) ----
+    Route::prefix('roles')->group(function () {
+        Route::get('/', [RoleController::class, 'index']);
+        Route::post('/', [RoleController::class, 'store']);
+        Route::get('/permissions-list', [RoleController::class, 'permissionsList']); // must be before /{id}
+        Route::get('/{id}', [RoleController::class, 'show']);
+        Route::put('/{id}', [RoleController::class, 'update']);
+        Route::delete('/{id}', [RoleController::class, 'destroy']);
     });
 
     // Supplier Routes
@@ -90,28 +102,27 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ---- Category ----
-    // routes/api.php
     Route::prefix('category')->group(function () {
-        Route::get('/', [CategoryController::class, 'index']);           // Get active categories
-        Route::get('/all', [CategoryController::class, 'getAll']);       // Get all categories
-        Route::get('/active', [CategoryController::class, 'getActive']); // Get active categories
-        Route::post('/', [CategoryController::class, 'store']);          // Create category
-        Route::get('/{id}', [CategoryController::class, 'show']);        // Get single category
-        Route::put('/{id}', [CategoryController::class, 'update']);      // Update category
-        Route::delete('/{id}', [CategoryController::class, 'destroy']);  // Delete category
-        Route::post('/{id}/restore', [CategoryController::class, 'restore']); // Restore category
+        Route::get('/', [CategoryController::class, 'index']);
+        Route::get('/all', [CategoryController::class, 'getAll']);
+        Route::get('/active', [CategoryController::class, 'getActive']);
+        Route::post('/', [CategoryController::class, 'store']);
+        Route::get('/{id}', [CategoryController::class, 'show']);
+        Route::put('/{id}', [CategoryController::class, 'update']);
+        Route::delete('/{id}', [CategoryController::class, 'destroy']);
+        Route::post('/{id}/restore', [CategoryController::class, 'restore']);
     });
 
     // ---- Unit ----
     Route::prefix('unit')->group(function () {
-        Route::get('/', [UnitController::class, 'index']);           // Get active units (status = 1)
-        Route::get('/all', [UnitController::class, 'getAll']);       // Get all units
-        Route::get('/active', [UnitController::class, 'getActive']); // Get active units
-        Route::post('/', [UnitController::class, 'store']);          // Create unit
-        Route::get('/{id}', [UnitController::class, 'show']);        // Get single unit
-        Route::put('/{id}', [UnitController::class, 'update']);      // Update unit
-        Route::delete('/{id}', [UnitController::class, 'destroy']);  // Delete unit
-        Route::post('/{id}/restore', [UnitController::class, 'restore']); // Restore unit
+        Route::get('/', [UnitController::class, 'index']);
+        Route::get('/all', [UnitController::class, 'getAll']);
+        Route::get('/active', [UnitController::class, 'getActive']);
+        Route::post('/', [UnitController::class, 'store']);
+        Route::get('/{id}', [UnitController::class, 'show']);
+        Route::put('/{id}', [UnitController::class, 'update']);
+        Route::delete('/{id}', [UnitController::class, 'destroy']);
+        Route::post('/{id}/restore', [UnitController::class, 'restore']);
     });
 
     // ---- Tables ----
@@ -162,14 +173,14 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('outlets')->group(function () {
-        Route::get('/', [OutletController::class, 'index']);              // Get active outlets
-        Route::get('/all', [OutletController::class, 'getAll']);          // Get all outlets
-        Route::get('/active', [OutletController::class, 'getActive']);    // Get active outlets
-        Route::post('/', [OutletController::class, 'store']);             // Create outlet
-        Route::get('/{id}', [OutletController::class, 'show']);           // Get single outlet
-        Route::put('/{id}', [OutletController::class, 'update']);         // Update outlet
-        Route::delete('/{id}', [OutletController::class, 'destroy']);     // Delete outlet
-        Route::post('/{id}/restore', [OutletController::class, 'restore']); // Restore outlet
+        Route::get('/', [OutletController::class, 'index']);
+        Route::get('/all', [OutletController::class, 'getAll']);
+        Route::get('/active', [OutletController::class, 'getActive']);
+        Route::post('/', [OutletController::class, 'store']);
+        Route::get('/{id}', [OutletController::class, 'show']);
+        Route::put('/{id}', [OutletController::class, 'update']);
+        Route::delete('/{id}', [OutletController::class, 'destroy']);
+        Route::post('/{id}/restore', [OutletController::class, 'restore']);
     });
 
     Route::prefix('food-types')->group(function () {
@@ -183,28 +194,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/toggle', [FoodTypeController::class, 'toggleOnline']);
     });
 
-
     Route::prefix('stock-requests')->group(function () {
-            Route::get('/', [OutletRequestController::class, 'index']);
-            Route::post('/', [OutletRequestController::class, 'store']);
-            Route::get('/pending-count', [OutletRequestController::class, 'pendingCount']);
-            Route::get('/{id}', [OutletRequestController::class, 'show']);
-            Route::post('/{id}/approve', [OutletRequestController::class, 'approve']);
-        });
+        Route::get('/', [OutletRequestController::class, 'index']);
+        Route::post('/', [OutletRequestController::class, 'store']);
+        Route::get('/pending-count', [OutletRequestController::class, 'pendingCount']);
+        Route::get('/{id}', [OutletRequestController::class, 'show']);
+        Route::post('/{id}/approve', [OutletRequestController::class, 'approve']);
+    });
 
-        // ============ DESPATCH ROUTES ============
-        Route::prefix('stock-despatches')->group(function () {
-            Route::get('/', [OutletDespatchController::class, 'index']);
-            Route::post('/', [OutletDespatchController::class, 'store']);
-            Route::get('/{id}', [OutletDespatchController::class, 'show']);
-        });
+    // ============ DESPATCH ROUTES ============
+    Route::prefix('stock-despatches')->group(function () {
+        Route::get('/', [OutletDespatchController::class, 'index']);
+        Route::post('/', [OutletDespatchController::class, 'store']);
+        Route::get('/{id}', [OutletDespatchController::class, 'show']);
+    });
 
-        // ============ RECEIVE ROUTES ============
-        Route::prefix('stock-receives')->group(function () {
-            Route::get('/', [OutletReceiveController::class, 'index']);
-            Route::post('/', [OutletReceiveController::class, 'store']);
-            Route::get('/{id}', [OutletReceiveController::class, 'show']);
-        });
+    // ============ RECEIVE ROUTES ============
+    Route::prefix('stock-receives')->group(function () {
+        Route::get('/', [OutletReceiveController::class, 'index']);
+        Route::post('/', [OutletReceiveController::class, 'store']);
+        Route::get('/{id}', [OutletReceiveController::class, 'show']);
+    });
 });
 
 // ==================== TEST ROUTES ====================

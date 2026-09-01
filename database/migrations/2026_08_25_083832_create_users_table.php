@@ -1,4 +1,3 @@
-// database/migrations/2024_01_01_000000_create_users_table.php
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -12,12 +11,12 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('username')->unique();
-            $table->string('email')->unique()->nullable();
+            $table->string('email')->nullable()->unique();
             $table->string('password');
             $table->string('first_name');
             $table->string('last_name');
-            $table->enum('role', ['admin', 'user'])->default('user');
-            $table->enum('status', ['active', 'inactive', 'banned'])->default('active');
+            $table->string('status')->default('active');
+            $table->unsignedBigInteger('outlet_id')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
