@@ -134,3 +134,7 @@ CREATE TABLE `outlet_stock_ledger` (
   `updated_at` timestamp NULL DEFAULT NULL,
   KEY `idx_outlet_product` (`outlet_id`,`product_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+ALTER TABLE `outlet_despatches` CHANGE `id` `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT, add PRIMARY KEY (`id`);
+ALTER TABLE `outlet_despatch_details` CHANGE `id` `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT, add PRIMARY KEY (`id`);

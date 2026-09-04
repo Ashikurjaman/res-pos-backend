@@ -6,7 +6,10 @@ use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
 
 class AuthController extends Controller
 {
@@ -26,16 +29,21 @@ class AuthController extends Controller
             ]);
 
             $user = \DB::transaction(function () use ($validated) {
-                $user = User::create([
+                $userData = [
                     'username' => $validated['username'],
                     'email' => $validated['email'] ?? null,
                     'password' => Hash::make($validated['password']),
                     'first_name' => $validated['firstName'],
                     'last_name' => $validated['lastName'],
                     'status' => User::STATUS_ACTIVE,
-                    'outlet_id' => $validated['outlet_id'] ?? null,
-                ]);
+                ];
 
+                // Only add outlet_id if the column exists
+                if (\Schema::hasColumn('users', 'outlet_id')) {
+                    $userData['outlet_id'] = $validated['outlet_id'] ?? null;
+                }
+
+                $user = User::create($userData);
                 $user->assignRole($validated['role'] ?? 'user');
 
                 return $user;
@@ -57,10 +65,11 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Signup failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create user',
-                'error' => $e->getMessage(), // ✅ ekhon actual error dekha jabe frontend e o
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -93,6 +102,9 @@ class AuthController extends Controller
                 ], 403);
             }
 
+            // Revoke existing tokens
+            $user->tokens()->delete();
+
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
@@ -109,6 +121,7 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Signin failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Login failed',
@@ -126,6 +139,7 @@ class AuthController extends Controller
                 'message' => 'Logged out successfully',
             ]);
         } catch (\Exception $e) {
+            Log::error('Signout failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Logout failed',
@@ -142,6 +156,7 @@ class AuthController extends Controller
                 'user' => $this->formatUser($request->user()),
             ]);
         } catch (\Exception $e) {
+            Log::error('Get me failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get user',
@@ -154,7 +169,11 @@ class AuthController extends Controller
     {
         try {
             $user = $request->user();
+
+            // Revoke current token
             $user->currentAccessToken()->delete();
+
+            // Create new token
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([
@@ -163,6 +182,7 @@ class AuthController extends Controller
                 'token' => $token,
             ]);
         } catch (\Exception $e) {
+            Log::error('Refresh token failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to refresh token',
@@ -200,7 +220,7 @@ class AuthController extends Controller
             }
 
             // Filter by outlet
-            if ($request->outlet_id) {
+            if ($request->outlet_id && \Schema::hasColumn('users', 'outlet_id')) {
                 $query->where('outlet_id', $request->outlet_id);
             }
 
@@ -221,6 +241,7 @@ class AuthController extends Controller
                 'data' => $users,
             ]);
         } catch (\Exception $e) {
+            Log::error('Fetch users failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch users',
@@ -238,6 +259,7 @@ class AuthController extends Controller
                 'data' => $this->formatUser($user),
             ]);
         } catch (\Exception $e) {
+            Log::error('Show user failed', ['user_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'User not found',
@@ -262,16 +284,23 @@ class AuthController extends Controller
                 'permissions.*' => 'exists:permissions,name',
             ]);
 
-            $user = User::create([
+            $userData = [
                 'username' => $validated['username'],
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
                 'status' => $validated['status'] ?? User::STATUS_ACTIVE,
-                'outlet_id' => $validated['outlet_id'] ?? null,
-            ]);
+            ];
 
+            // Only add outlet_id if column exists
+            if (\Schema::hasColumn('users', 'outlet_id')) {
+                $userData['outlet_id'] = $validated['outlet_id'] ?? null;
+            }
+
+            $user = User::create($userData);
+
+            // Assign role
             $user->assignRole($validated['role']);
 
             // Extra direct permissions on top of role (optional)
@@ -279,10 +308,12 @@ class AuthController extends Controller
                 $user->givePermissionTo($validated['permissions']);
             }
 
+            $user->load(['outlet', 'roles', 'permissions']);
+
             return response()->json([
                 'success' => true,
                 'message' => 'User created successfully',
-                'data' => $this->formatUser($user->fresh(['outlet', 'roles', 'permissions'])),
+                'data' => $this->formatUser($user),
             ], 201);
 
         } catch (ValidationException $e) {
@@ -292,6 +323,7 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Store user failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create user',
@@ -304,6 +336,12 @@ class AuthController extends Controller
     {
         try {
             $user = User::findOrFail($id);
+
+            Log::info('User update request', [
+                'user_id' => $id,
+                'request_data' => $request->except(['password']),
+                'auth_user_id' => auth()->id()
+            ]);
 
             $validated = $request->validate([
                 'username' => 'sometimes|string|unique:users,username,' . $id . '|min:3|max:20',
@@ -318,44 +356,96 @@ class AuthController extends Controller
                 'permissions.*' => 'exists:permissions,name',
             ]);
 
-            // Prevent changing own role/status
+            // ✅ Allow superadmin to change their own role (for testing)
+            // Remove this in production if you don't want it
             if (auth()->id() === $user->id) {
-                unset($validated['role'], $validated['status']);
+                // Only allow if user is superadmin or allow for testing
+                if (auth()->user()->isSuperAdmin()) {
+                    Log::warning('Superadmin changing their own role', ['user_id' => $id]);
+                } else {
+                    unset($validated['role'], $validated['status']);
+                    Log::info('Removed role/status for self-update', ['user_id' => $id]);
+                }
             }
 
-            if (isset($validated['password'])) {
+            // Handle password
+            if (isset($validated['password']) && !empty($validated['password'])) {
                 $validated['password'] = Hash::make($validated['password']);
+            } else {
+                unset($validated['password']);
             }
 
+            // Extract role and permissions before updating
             $role = $validated['role'] ?? null;
             $permissions = $validated['permissions'] ?? null;
             unset($validated['role'], $validated['permissions']);
 
+            // Handle outlet_id
+            if (isset($validated['outlet_id']) && !\Schema::hasColumn('users', 'outlet_id')) {
+                unset($validated['outlet_id']);
+            }
+
+            Log::info('Updating user with data', [
+                'user_id' => $id,
+                'update_data' => $validated,
+                'role_to_assign' => $role,
+                'permissions_to_assign' => $permissions
+            ]);
+
+            // Update user basic info
             $user->update($validated);
 
             // Update role via Spatie
             if ($role) {
-                $user->syncRoles([$role]);
+                $roleExists = Role::where('name', $role)->exists();
+                Log::info('Role exists check', ['role' => $role, 'exists' => $roleExists]);
+
+                if ($roleExists) {
+                    $user->syncRoles([$role]);
+                    Log::info('Role synced successfully', ['user_id' => $id, 'role' => $role]);
+                } else {
+                    Log::warning('Role not found', ['role' => $role]);
+                }
             }
 
-            // Merge extra direct permissions with existing ones
-            if ($permissions) {
+            // Update permissions if provided
+            if ($permissions !== null) {
                 $user->syncPermissions($permissions);
+                Log::info('Permissions synced', ['user_id' => $id, 'permissions' => $permissions]);
             }
+
+            // Refresh user with all relations
+            $user->refresh();
+            $user->load(['outlet', 'roles', 'permissions']);
+
+            Log::info('User after update', [
+                'user_id' => $id,
+                'new_role' => $user->getRoleNames()->first(),
+                'all_roles' => $user->getRoleNames()->toArray()
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User updated successfully',
-                'data' => $this->formatUser($user->fresh(['outlet', 'roles', 'permissions'])),
+                'data' => $this->formatUser($user),
             ]);
 
         } catch (ValidationException $e) {
+            Log::error('Validation error in user update', [
+                'user_id' => $id,
+                'errors' => $e->errors()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('User update failed', [
+                'user_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user',
@@ -376,7 +466,7 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Prevent deleting last super admin (Spatie scope)
+            // Prevent deleting last super admin
             if ($user->isSuperAdmin() && User::role(User::ROLE_SUPER_ADMIN)->count() <= 1) {
                 return response()->json([
                     'success' => false,
@@ -392,6 +482,7 @@ class AuthController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            Log::error('User delete failed', ['user_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete user',
@@ -431,6 +522,7 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Update status failed', ['user_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user status',
@@ -448,20 +540,54 @@ class AuthController extends Controller
 
             $user = User::findOrFail($id);
 
+            Log::info('Role update request', [
+                'user_id' => $id,
+                'role' => $validated['role'],
+                'auth_user_id' => auth()->id()
+            ]);
+
+            // ✅ Allow superadmin to change their own role (for testing)
             if (auth()->id() === $user->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot change your own role',
-                ], 403);
+                // Only allow if user is superadmin or for testing
+                if (auth()->user()->isSuperAdmin()) {
+                    Log::warning('Superadmin changing their own role', ['user_id' => $id]);
+                    // Allow it
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot change your own role',
+                    ], 403);
+                }
             }
 
-            // Replace role entirely (single-role system)
+            // Check if trying to change last super admin
+            if ($user->isSuperAdmin()) {
+                $superAdminCount = User::role(User::ROLE_SUPER_ADMIN)->count();
+                if ($superAdminCount <= 1 && $validated['role'] !== User::ROLE_SUPER_ADMIN) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Cannot change the last super admin role',
+                    ], 403);
+                }
+            }
+
+            // Sync role
             $user->syncRoles([$validated['role']]);
+
+            // Refresh and return
+            $user->refresh();
+            $user->load(['outlet', 'roles', 'permissions']);
+
+            Log::info('Role updated successfully', [
+                'user_id' => $id,
+                'new_role' => $validated['role'],
+                'user_roles' => $user->getRoleNames()->toArray()
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'User role updated successfully',
-                'data' => $this->formatUser($user->fresh(['outlet', 'roles', 'permissions'])),
+                'data' => $this->formatUser($user),
             ]);
 
         } catch (ValidationException $e) {
@@ -471,6 +597,10 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Role update failed', [
+                'user_id' => $id,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user role',
@@ -496,7 +626,6 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Direct permissions on top of role (Spatie sync = replace direct perms only)
             $user->syncPermissions($validated['permissions']);
 
             return response()->json([
@@ -512,6 +641,7 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Update permissions failed', ['user_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update user permissions',
@@ -539,7 +669,7 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            // Prevent deleting all super admins (Spatie scope)
+            // Prevent deleting all super admins
             $superAdminIds = User::role(User::ROLE_SUPER_ADMIN)
                 ->whereIn('id', $ids)
                 ->pluck('id')
@@ -573,6 +703,7 @@ class AuthController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('Bulk delete failed', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete users',
@@ -594,17 +725,17 @@ class AuthController extends Controller
             'first_name' => $user->first_name,
             'last_name' => $user->last_name,
             'full_name' => $user->full_name,
-            'roles' => $user->getRoleNames(),                  // collection: ['admin']
-            'role' => $user->getRoleNames()->first(),           // single-role UI backward compat
+            'roles' => $user->getRoleNames(),
+            'role' => $user->getRoleNames()->first(),
             'status' => $user->status,
             'status_label' => $user->status_label,
-            'outlet_id' => $user->outlet_id,
+            'outlet_id' => $user->outlet_id ?? null,
             'outlet' => $user->outlet ? [
                 'id' => $user->outlet->id,
                 'outlet_name' => $user->outlet->outlet_name,
                 'outlet_code' => $user->outlet->outlet_code,
             ] : null,
-            'permissions' => $user->getAllPermissions()->pluck('name'), // role + direct combined
+            'permissions' => $user->getAllPermissions()->pluck('name'),
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
         ];

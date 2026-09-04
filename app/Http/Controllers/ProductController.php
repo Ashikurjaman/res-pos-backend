@@ -22,6 +22,111 @@ class ProductController extends Controller
     /**
      * Get product creation data (categories, units, suppliers, food_types).
      */
+
+     // App\Http\Controllers\ProductController.php
+
+     // Add this method before the show method or after index method
+
+     /**
+      * Search products by name, code, or barcode.
+      */
+     public function search(Request $request)
+     {
+         try {
+             $query = $request->get('q');
+             $outletId = $request->get('outlet_id', 1);
+             $perPage = $request->get('per_page', 20);
+             $categoryId = $request->get('category_id');
+
+             // Validate search query
+             if (empty($query) || strlen($query) < 2) {
+                 return response()->json([
+                     'success' => true,
+                     'data' => [],
+                     'message' => 'Please enter at least 2 characters'
+                 ]);
+             }
+
+             // Build the search query
+            $products = Product::with(['unit', 'category', 'foodType'])
+                ->where(function ($q) use ($query) {
+                    $q->where('product_name', 'LIKE', "%{$query}%")
+                        ->orWhere('product_code', 'LIKE', "%{$query}%");
+
+                 })
+                 ->where('validity', 1)
+                 ->where('status', 1)
+                 ->orderBy('product_name', 'asc');
+
+             // Filter by category if provided
+             if ($categoryId) {
+                 $products->where('category_id', $categoryId);
+             }
+
+             // Get paginated results
+             $products = $products->paginate($perPage);
+
+             // Format the response with stock and unit information
+             $products->getCollection()->transform(function ($product) use ($outletId) {
+                 // Get branch stock for the outlet
+                 $branchStore = BranchStore::where('product_id', $product->id)
+                     ->where('outlet_id', $outletId)
+                     ->first();
+
+                 // Get head office stock
+                 $headOfficeStock = HeadOfficeStock::where('product_id', $product->id)
+                     ->orderBy('id', 'desc')
+                     ->first();
+
+                 return [
+                     'id' => $product->id,
+                     'product_code' => $product->product_code,
+                     'product_name' => $product->product_name,
+                     'unit_id' => $product->unit_id,
+                     'unit_name' => $product->unit->unit_name ?? 'Pcs',
+                     'category_id' => $product->category_id,
+                     'category_name' => $product->category->category_name ?? null,
+                     'food_type_id' => $product->food_type_id,
+                     'food_type_name' => $product->foodType->type_name ?? null,
+                     'pur_price' => $product->pur_price ?? 0,
+                     'sale_price' => $product->sale_price ?? 0,
+                     'cost_price' => $product->cost_price ?? 0,
+                     'vat_rate' => $product->vat_rate ?? 0,
+                     'sd_rate' => $product->sd_rate ?? 0,
+                     'scharge' => $product->scharge ?? 0,
+                     'branch_stock' => $branchStore ? $branchStore->balanceinhand : 0,
+                     'head_office_stock' => $headOfficeStock ? $headOfficeStock->current_balance : 0,
+                     'total_stock' => ($branchStore ? $branchStore->balanceinhand : 0) +
+                                    ($headOfficeStock ? $headOfficeStock->current_balance : 0),
+                     'opening_balance' => $product->opening_balance ?? 0,
+                     'product_image' => $product->product_image,
+                     'expire' => $product->expire,
+                     'status' => $product->status,
+                     'validity' => $product->validity,
+                     'product_type' => $product->product_type,
+                 ];
+             });
+
+             return response()->json([
+                 'success' => true,
+                 'data' => $products,
+                 'message' => 'Products fetched successfully'
+             ]);
+
+         } catch (\Exception $e) {
+             Log::error('Product search failed', [
+                 'error' => $e->getMessage(),
+                 'query' => $request->get('q'),
+                 'trace' => $e->getTraceAsString()
+             ]);
+
+             return response()->json([
+                 'success' => false,
+                 'message' => 'Failed to search products',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
     public function create()
     {
         try {
